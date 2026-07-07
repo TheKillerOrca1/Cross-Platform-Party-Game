@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multiplayer Prototype - Step 1</title>
+  <style>
+    /* Make the canvas fill the whole browser window with no scrollbars */
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      background: #111;
+    }
+    #renderCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none; /* prevents mobile browsers from scrolling/zooming on touch */
+    }
+    /* Small on-screen readout showing connection status + player count,
+       just so we can visually confirm multiplayer is working. */
+    #hud {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      color: #fff;
+      font-family: monospace;
+      font-size: 14px;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 6px 10px;
+      border-radius: 4px;
+      pointer-events: none; /* let clicks pass through to the canvas */
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">Connecting...</div>
+  <canvas id="renderCanvas"></canvas>
+
+  <!-- Babylon.js: the 3D rendering engine (draws the scene, capsules, ground) -->
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <!-- Socket.io client: talks to our Node server in real time -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- Our own game code -->
+  <script src="client.js"></script>
+</body>
+</html>
