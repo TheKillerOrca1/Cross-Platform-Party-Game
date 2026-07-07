@@ -117,6 +117,38 @@ io.on('connection', (socket) => {
     });
   });
 
+  // Fired when this client fires a projectile. We relay it to everyone
+  // ELSE so their browsers can render the shot flying through the air.
+  // The shooter already rendered their own copy locally the instant they
+  // clicked, for zero-latency feedback.
+  //
+  // Note: we pull the color from our own server-side record rather than
+  // trusting whatever the client sends, since color is tied to player
+  // identity and shouldn't be spoofable even in a friendly playtest.
+  socket.on('fire', (data) => {
+    const player = players[socket.id];
+    if (!player) return;
+
+    socket.broadcast.emit('projectileFired', {
+      ownerId: socket.id,
+      x: data.x,
+      y: data.y,
+      z: data.z,
+      dirX: data.dirX,
+      dirZ: data.dirZ,
+      color: player.color,
+    });
+  });
+
+  // Fired when this client's own projectile touches another player (the
+  // shooter's browser does that hit-detection - see client.js). We just
+  // relay the result to EVERYONE (io.emit, including the shooter) so all
+  // connected browsers show the same hit reaction at the same time.
+  socket.on('hit', (data) => {
+    if (!players[data.targetId]) return; // target may have already disconnected
+    io.emit('playerHit', { id: data.targetId });
+  });
+
   // Fired automatically when a tab is closed / loses connection.
   socket.on('disconnect', () => {
     console.log(`Player disconnected: ${socket.id}`);
