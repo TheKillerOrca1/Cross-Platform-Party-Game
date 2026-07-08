@@ -33,30 +33,70 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // ----------------------------------------------------------------------------
 // PLAYER STATE
 // ----------------------------------------------------------------------------
-// The server is the "source of truth" for where every player is. Each entry
-// looks like: { x, z, rotationY, color }
-// We only track position on the flat ground (x, z) plus a facing rotation -
-// no need for height (y) yet since everyone is walking on a flat plane.
+// The server is the "source of truth" for where every player is, and now
+// also for combat: health and alive/dead state. Each entry looks like:
+//   { x, z, rotationY, color, health, alive }
 const players = {};
 
-// A small palette so each new player gets a distinct, readable color.
-// We just cycle through this list as players join.
-const PLAYER_COLORS = [
-  '#e74c3c', // red
-  '#3498db', // blue
-  '#2ecc71', // green
-  '#f1c40f', // yellow
-  '#9b59b6', // purple
-  '#e67e22', // orange
-  '#1abc9c', // teal
-  '#ff69b4', // pink
-];
-let nextColorIndex = 0;
+const MAX_HEALTH = 100;
 
-function pickNextColor() {
-  const color = PLAYER_COLORS[nextColorIndex % PLAYER_COLORS.length];
-  nextColorIndex += 1;
+// Team-tinted palettes so allegiance is readable at a glance: red team
+// players get warm colors, blue team players cool ones. Cycled per-team
+// so two teammates still look distinct from each other.
+const TEAM_COLORS = {
+  red: ['#e74c3c', '#e67e22', '#f1c40f', '#ff69b4'],
+  blue: ['#3498db', '#1abc9c', '#9b59b6', '#2ecc71'],
+};
+const nextColorIndexByTeam = { red: 0, blue: 0 };
+
+function pickNextColor(team) {
+  const palette = TEAM_COLORS[team];
+  const color = palette[nextColorIndexByTeam[team] % palette.length];
+  nextColorIndexByTeam[team] += 1;
   return color;
+}
+
+// Auto-balance: joiners who didn't pick a side go to the smaller team.
+function pickAutoTeam() {
+  let red = 0;
+  let blue = 0;
+  Object.values(players).forEach((p) => {
+    if (p.team === 'red') red++;
+    else blue++;
+  });
+  return red <= blue ? 'red' : 'blue';
+}
+
+// Teams spawn on opposite sides of the map (red west, blue east), with
+// some jitter so simultaneous joiners don't stack. Shared by both the
+// very first join AND every respawn - a respawn in this prototype is a
+// full fresh connection (the client disconnects its old socket and opens
+// a new one once the player picks a mode on the death screen - see
+// client.js), so this one spawn path covers both cases.
+const MAP_HALF = 35; // mirrors the client's 70x70 ground
+function randomSpawnPosition(team) {
+  const sideX = team === 'red' ? -(MAP_HALF - 8) : (MAP_HALF - 8);
+  return {
+    x: sideX + (Math.random() - 0.5) * 6,
+    z: (Math.random() - 0.5) * 16,
+  };
+}
+
+// Applies damage to a player, clamping at 0 and flipping them dead the
+// moment they cross it. Returns the resulting health, or null if the
+// target doesn't exist, is already dead, or has test mode on (the
+// in-game menu's "can't die" toggle - enforced here so it actually
+// works, since damage originates from OTHER clients' hit reports).
+function applyDamage(targetId, amount) {
+  const player = players[targetId];
+  if (!player || !player.alive || player.testMode) return null;
+
+  player.health = Math.max(0, player.health - amount);
+  if (player.health <= 0) {
+    player.alive = false;
+    io.emit('playerDied', { id: targetId });
+  }
+  return player.health;
 }
 
 // ----------------------------------------------------------------------------
@@ -69,16 +109,31 @@ function pickNextColor() {
 io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);
 
-  // Spawn the new player at a random-ish position near the center so
-  // multiple players joining at once don't all stack on top of each other.
-  const spawnX = (Math.random() - 0.5) * 6;
-  const spawnZ = (Math.random() - 0.5) * 6;
+  // "Avatarless" players (the Swarm Command mode) have NO walking capsule -
+  // they're represented entirely by their minions. Other clients need to
+  // know this so they DON'T render a stationary ghost capsule for them, and
+  // so projectiles don't try to "hit" an invisible body. The client tells
+  // us at connect time via a handshake query param (race-free: it's known
+  // before we emit the very first playerJoined). The server stays otherwise
+  // mode-agnostic - this one boolean is all it needs.
+  const avatarless = socket.handshake.query && socket.handshake.query.minionsOnly === '1';
+
+  // Team comes from the join screen's picker; anything unrecognized
+  // (including the default "auto") gets balanced onto the smaller team.
+  const requestedTeam = socket.handshake.query && socket.handshake.query.team;
+  const team = requestedTeam === 'red' || requestedTeam === 'blue' ? requestedTeam : pickAutoTeam();
+
+  const spawn = randomSpawnPosition(team);
 
   players[socket.id] = {
-    x: spawnX,
-    z: spawnZ,
+    x: spawn.x,
+    z: spawn.z,
     rotationY: 0,
-    color: pickNextColor(),
+    team,
+    color: pickNextColor(team),
+    health: MAX_HEALTH,
+    alive: true,
+    avatarless,
   };
 
   // Tell the NEW player who they are and who else is already in the game.
@@ -100,7 +155,7 @@ io.on('connection', (socket) => {
   // server-side movement validation yet - fine for a local playtest).
   socket.on('move', (data) => {
     const player = players[socket.id];
-    if (!player) return;
+    if (!player || !player.alive) return;
 
     player.x = data.x;
     player.z = data.z;
@@ -127,7 +182,7 @@ io.on('connection', (socket) => {
   // identity and shouldn't be spoofable even in a friendly playtest.
   socket.on('fire', (data) => {
     const player = players[socket.id];
-    if (!player) return;
+    if (!player || !player.alive) return;
 
     socket.broadcast.emit('projectileFired', {
       ownerId: socket.id,
@@ -140,13 +195,82 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Fired when this client's own projectile touches another player (the
-  // shooter's browser does that hit-detection - see client.js). We just
-  // relay the result to EVERYONE (io.emit, including the shooter) so all
-  // connected browsers show the same hit reaction at the same time.
+  // Fired when this client's own projectile (or, later, a minion) touches
+  // another player (the shooter's browser does that hit-detection - see
+  // client.js). `damage` varies by source - a player's own shots hit
+  // harder than other sources will (see PLAYER_PROJECTILE_DAMAGE in
+  // client.js) - so we apply it here to keep health server-authoritative,
+  // then relay the result to EVERYONE (io.emit, including the shooter) so
+  // all connected browsers show the same health/hit reaction at once.
   socket.on('hit', (data) => {
-    if (!players[data.targetId]) return; // target may have already disconnected
-    io.emit('playerHit', { id: data.targetId });
+    // No friendly fire: a hit reported against a teammate simply doesn't
+    // count. Enforced here (not just client-side) so every damage path -
+    // projectiles and minion zaps alike - respects it automatically.
+    const shooter = players[socket.id];
+    const target = players[data.targetId];
+    if (shooter && target && shooter.team === target.team) return;
+
+    const damage = typeof data.damage === 'number' ? data.damage : 10;
+    const newHealth = applyDamage(data.targetId, damage);
+    if (newHealth === null) return; // target missing or already dead - nothing to relay
+
+    io.emit('playerHit', { id: data.targetId, health: newHealth });
+  });
+
+  // ----------------------------------------------------------------------
+  // MINIONS (Squad / Solo FPS / Solo TPS / Swarm modes)
+  // ----------------------------------------------------------------------
+  // Minions are NOT tracked as server state the way players are - the
+  // server just relays them, exactly like it relays player position. Each
+  // owning client is the "source of truth" for its own minions' health and
+  // alive/dead state (consistent with this prototype's existing
+  // client-authoritative-hit-detection trust model).
+
+  // Periodic broadcast of this player's minions (position + alive + health)
+  // so other clients can render and shoot at them. Throttled client-side.
+  // We inject the owner's color from our own record (same reason as 'fire'
+  // above - color is identity, shouldn't be client-spoofable), which also
+  // conveniently lets Swarm players - who have no avatar to read a color
+  // from on other clients - still get correctly-tinted minions.
+  socket.on('minionsUpdate', (data) => {
+    const player = players[socket.id];
+    if (!player) return;
+
+    socket.broadcast.emit('minionsUpdate', {
+      id: socket.id,
+      color: player.color,
+      team: player.team, // receivers use this to exempt teammates' minions from targeting
+      minions: data.minions,
+    });
+  });
+
+  // A minion got hit by someone's shot. Relayed to EVERYONE (io.emit,
+  // including the shooter) so the OWNING client - authoritative for its
+  // own minions' health - definitely receives it and can apply the
+  // damage, while everyone else shows a cosmetic reaction. Test mode
+  // shields a player's minions along with the player themself.
+  socket.on('minionHit', (data) => {
+    const owner = players[data.ownerId];
+    if (owner && owner.testMode) return;
+
+    // No friendly fire against teammates' minions either.
+    const shooter = players[socket.id];
+    if (shooter && owner && shooter.team === owner.team) return;
+
+    io.emit('minionHit', {
+      ownerId: data.ownerId,
+      minionIndex: data.minionIndex,
+      damage: data.damage,
+    });
+  });
+
+  // The in-game testing menu's "can't die" toggle. Kept as plain server
+  // state so damage from OTHER clients' hit reports can be skipped at the
+  // one place health actually changes (applyDamage above).
+  socket.on('setTestMode', (data) => {
+    const player = players[socket.id];
+    if (!player) return;
+    player.testMode = !!data.enabled;
   });
 
   // Fired automatically when a tab is closed / loses connection.

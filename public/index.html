@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Multiplayer Prototype - Step 1</title>
+  <title>Multiplayer Prototype - Platform Camera Test</title>
   <style>
     /* Make the canvas fill the whole browser window with no scrollbars */
     html, body {
@@ -34,11 +34,380 @@
       border-radius: 4px;
       pointer-events: none; /* let clicks pass through to the canvas */
     }
+
+    /* ---- Join screen: shown before the player picks how they're playing ---- */
+    #joinScreen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background: rgba(10, 12, 10, 0.95);
+      font-family: sans-serif;
+      color: #fff;
+      z-index: 10;
+    }
+    #joinScreen h1 {
+      margin: 0 0 10px;
+      font-size: 22px;
+      font-weight: 600;
+    }
+    #joinScreen p {
+      margin: 0 0 20px;
+      color: #9a9a9a;
+      font-size: 13px;
+      max-width: 320px;
+      text-align: center;
+    }
+    .join-btn {
+      width: 280px;
+      padding: 14px 18px;
+      font-size: 15px;
+      border: 1px solid #4a4a4a;
+      border-radius: 8px;
+      background: #1e1e1e;
+      color: #fff;
+      cursor: pointer;
+      text-align: left;
+    }
+    .join-btn:hover {
+      background: #2a2a2a;
+      border-color: #6a6a6a;
+    }
+    .join-btn .sub {
+      display: block;
+      font-size: 12px;
+      color: #8a8a8a;
+      margin-top: 2px;
+    }
+    /* Shown on the join screen while a respawn cooldown is counting down -
+       buttons are visibly greyed out and unclickable until it clears. */
+    .join-btn.disabled {
+      opacity: 0.4;
+      pointer-events: none;
+      cursor: default;
+    }
+
+    /* ---- Team picker row (above the mode buttons) ---- */
+    #teamPicker {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .team-btn {
+      padding: 8px 16px;
+      font-size: 13px;
+      border: 1px solid #4a4a4a;
+      border-radius: 6px;
+      background: #1e1e1e;
+      color: #fff;
+      cursor: pointer;
+    }
+    .team-btn.selected {
+      border-color: #fff;
+      background: #333;
+    }
+    .team-btn[data-team="red"].selected { border-color: #e74c3c; background: rgba(231, 76, 60, 0.25); }
+    .team-btn[data-team="blue"].selected { border-color: #3498db; background: rgba(52, 152, 219, 0.25); }
+    #respawnCountdown {
+      display: none;
+      margin: -6px 0 16px;
+      color: #e74c3c;
+      font-size: 13px;
+      font-family: monospace;
+    }
+
+    /* ---- Mobile on-screen touch controls (hidden unless a mobile mode is active) ---- */
+    #touchJoystickBase {
+      position: absolute;
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.12);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      display: none;
+      pointer-events: none; /* visual only - the canvas itself handles the touch */
+      z-index: 5;
+    }
+    #touchJoystickKnob {
+      position: absolute;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.5);
+      top: 30px;
+      left: 30px;
+      pointer-events: none;
+    }
+    #touchHint {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      color: rgba(255, 255, 255, 0.5);
+      font-family: monospace;
+      font-size: 12px;
+      display: none;
+      pointer-events: none;
+      z-index: 5;
+      text-align: right;
+    }
+
+    /* Second on-screen stick (right side): aim-and-release-to-fire in Squad
+       Mode, or push-to-turn in Solo FPS/TPS. Tinted so it never gets
+       confused with the plain white movement stick. */
+    #aimJoystickBase {
+      position: absolute;
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      display: none;
+      pointer-events: none;
+      z-index: 5;
+      background: rgba(231, 76, 60, 0.15);
+      border: 2px solid rgba(231, 76, 60, 0.45);
+    }
+    #aimJoystickKnob {
+      position: absolute;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: rgba(231, 76, 60, 0.55);
+      top: 30px;
+      left: 30px;
+      pointer-events: none;
+    }
+    /* Blue variant while acting as the FPS/TPS turn stick */
+    #aimJoystickBase.turn-stick {
+      background: rgba(52, 152, 219, 0.15);
+      border-color: rgba(52, 152, 219, 0.45);
+    }
+    #aimJoystickBase.turn-stick #aimJoystickKnob {
+      background: rgba(52, 152, 219, 0.55);
+    }
+
+    /* ---- Crosshair: screen-center aim dot for facing-equals-aim modes ---- */
+    #crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.9);
+      box-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+      display: none;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* ---- Hit-marker: red screen-edge flash when YOUR shot lands ---- */
+    #hitMarker {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 6;
+      box-shadow: inset 0 0 0 0 rgba(255, 60, 60, 0);
+      transition: box-shadow 0.08s ease-out;
+    }
+    #hitMarker.active {
+      box-shadow: inset 0 0 40px 8px rgba(255, 60, 60, 0.55);
+    }
+
+    /* ---- Own health bar (bottom-left HUD) ---- */
+    #hudHealthBar {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      width: 180px;
+      display: none;
+      z-index: 5;
+      pointer-events: none;
+      font-family: monospace;
+      color: #fff;
+    }
+    #hudHealthBarTrack {
+      height: 14px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      overflow: hidden;
+    }
+    #hudHealthBarFill {
+      height: 100%;
+      width: 100%;
+      background: #2ecc71;
+      transition: width 0.15s ease-out, background-color 0.15s;
+    }
+    #hudHealthBarText {
+      font-size: 11px;
+      margin-top: 2px;
+      text-shadow: 0 0 3px #000;
+    }
+
+    /* ---- In-game testing menu (toggled by the corner button) ---- */
+    #menuToggleBtn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 20;
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      border: 1px solid #4a4a4a;
+      background: rgba(30, 30, 30, 0.85);
+      color: #fff;
+      font-size: 18px;
+      cursor: pointer;
+      display: none;
+    }
+    #inGameMenu {
+      position: absolute;
+      top: 52px;
+      right: 8px;
+      width: 270px;
+      z-index: 15;
+      background: rgba(16, 18, 16, 0.92);
+      border: 1px solid #3a3a3a;
+      border-radius: 10px;
+      padding: 12px;
+      display: none;
+      font-family: sans-serif;
+      color: #fff;
+      max-height: calc(100% - 70px);
+      overflow-y: auto;
+    }
+    #inGameMenu h2 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #bbb;
+    }
+    #inGameMenu .menu-mode-btn {
+      width: 100%;
+      margin-bottom: 6px;
+      padding: 8px 10px;
+      font-size: 13px;
+      border: 1px solid #4a4a4a;
+      border-radius: 6px;
+      background: #1e1e1e;
+      color: #fff;
+      cursor: pointer;
+      text-align: left;
+    }
+    #inGameMenu .menu-mode-btn:hover {
+      background: #2a2a2a;
+    }
+    #inGameMenu .menu-row {
+      margin: 12px 0 4px;
+      font-size: 13px;
+    }
+    #inGameMenu input[type="range"] {
+      width: 100%;
+    }
+
+    /* ---- Rotate-to-landscape overlay (mobile modes only) ---- */
+    #orientationLockOverlay {
+      position: absolute;
+      inset: 0;
+      z-index: 50;
+      background: rgba(8, 10, 8, 0.97);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: #fff;
+      font-family: sans-serif;
+      text-align: center;
+    }
+    #orientationLockOverlay .rotate-icon {
+      font-size: 42px;
+    }
+    /* Only bites when a mobile mode is active AND the device is portrait -
+       the .mobile-active class is added/removed by the game code. */
+    @media (orientation: portrait) {
+      #orientationLockOverlay.mobile-active {
+        display: flex;
+      }
+    }
   </style>
 </head>
 <body>
+  <div id="joinScreen">
+    <h1>Choose how you're playing</h1>
+    <p>All options control the same match - this is purely so we can playtest different camera/control schemes on one device.</p>
+    <div id="teamPicker">
+      <button class="team-btn selected" data-team="auto">Auto team</button>
+      <button class="team-btn" data-team="red">🔴 Red</button>
+      <button class="team-btn" data-team="blue">🔵 Blue</button>
+    </div>
+    <div id="respawnCountdown"></div>
+    <button class="join-btn" data-mode="pc">
+      🖱️ PC
+      <span class="sub">First-person - WASD move, mouse to look/aim, click to fire</span>
+    </button>
+    <button class="join-btn" data-mode="console">
+      🎮 Console
+      <span class="sub">Third-person - left stick move, right stick aim, trigger to fire (needs a gamepad)</span>
+    </button>
+    <button class="join-btn" data-mode="mobile-squad">
+      📱 Mobile: Squad Mode
+      <span class="sub">Top-down - lead 2 minions that auto-attack whatever you aim at</span>
+    </button>
+    <button class="join-btn" data-mode="mobile-fps">
+      📱 Mobile: Solo FPS Mode
+      <span class="sub">First-person - touch joystick to move, drag to look, tap to fire (+2 minions)</span>
+    </button>
+    <button class="join-btn" data-mode="mobile-tps">
+      📱 Mobile: Solo TPS Mode
+      <span class="sub">Third-person - same touch controls, camera behind your character (+2 minions)</span>
+    </button>
+    <button class="join-btn" data-mode="mobile-swarm">
+      📱 Mobile: Swarm Command
+      <span class="sub">Top-down commander - tap to move your swarm of 6, they auto-attack in range</span>
+    </button>
+  </div>
+
   <div id="hud">Connecting...</div>
   <canvas id="renderCanvas"></canvas>
+
+  <div id="touchJoystickBase"><div id="touchJoystickKnob"></div></div>
+  <div id="aimJoystickBase"><div id="aimJoystickKnob"></div></div>
+  <div id="touchHint">drag right side to look<br/>tap right side to fire</div>
+
+  <div id="crosshair"></div>
+  <div id="hitMarker"></div>
+
+  <div id="hudHealthBar">
+    <div id="hudHealthBarTrack"><div id="hudHealthBarFill"></div></div>
+    <div id="hudHealthBarText">100 / 100</div>
+  </div>
+
+  <button id="menuToggleBtn" title="Testing menu">&#9776;</button>
+  <div id="inGameMenu">
+    <h2>Switch mode</h2>
+    <button class="menu-mode-btn" data-mode="pc">🖱️ PC</button>
+    <button class="menu-mode-btn" data-mode="console">🎮 Console</button>
+    <button class="menu-mode-btn" data-mode="mobile-squad">📱 Squad Mode</button>
+    <button class="menu-mode-btn" data-mode="mobile-fps">📱 Solo FPS</button>
+    <button class="menu-mode-btn" data-mode="mobile-tps">📱 Solo TPS</button>
+    <button class="menu-mode-btn" data-mode="mobile-swarm">📱 Swarm Command</button>
+    <div class="menu-row">
+      Sensitivity: <span id="sensitivityLabel">100%</span>
+      <input type="range" id="sensitivitySlider" min="25" max="200" value="100" />
+    </div>
+    <div class="menu-row">
+      <label><input type="checkbox" id="testModeToggle" /> Test mode (can't die)</label>
+    </div>
+  </div>
+
+  <div id="orientationLockOverlay">
+    <div class="rotate-icon">&#8634;</div>
+    <div>Please rotate your device to landscape</div>
+  </div>
 
   <!-- Babylon.js: the 3D rendering engine (draws the scene, capsules, ground) -->
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
