@@ -28,7 +28,7 @@ This is the **first and primary gamemode** for launch. The name "Capture the Fla
 
 ## Extraction Points
 - **Multiple possible extraction points, varying by map** — different maps can offer different numbers/placements of extraction zones
-- This ties map design directly to platform balance — e.g., a map with a distant extraction point might favor Console's mobility-based support kit, while a tight, close-quarters map might favor VR Melee or PC Assassin bursts
+- This ties map design directly to platform balance — e.g., a map with a distant extraction point might favor Console's parkour mobility, while a tight, close-quarters map might favor VR's melee physicality or PC Assassin bursts
 
 ## Win Conditions
 Two paths to victory, running in parallel:
