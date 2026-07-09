@@ -199,6 +199,7 @@ io.on('connection', (socket) => {
       y: data.y,
       z: data.z,
       dirX: data.dirX,
+      dirY: data.dirY, // vertical aim component (shots can now be aimed up/down)
       dirZ: data.dirZ,
       color: player.color,
     });

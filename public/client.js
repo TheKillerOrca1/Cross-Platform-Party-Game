@@ -67,7 +67,12 @@ const CAMERA_ROTATE_LERP_SPEED = 8;
 // --- Combat tuning ---
 const PROJECTILE_SPEED = 25;        // world units per second (raised from 15 - snappier shots)
 const PROJECTILE_MAX_DISTANCE = 30; // despawn after traveling this far
-const HIT_RADIUS = 0.9;             // how close a projectile must get to count as a hit
+const HIT_RADIUS = 0.9;             // how close (horizontally) a projectile must get to count as a hit
+// Projectiles now travel in full 3D (they can be aimed up/down), so a hit
+// also needs the shot to be at roughly the target's HEIGHT, not just its
+// x/z footprint. A capsule spans ~0.9 above and below its center; this is
+// that half-height plus a little forgiveness.
+const HIT_VERTICAL = 1.2;
 const FIRE_COOLDOWN_MS = 250;       // minimum time between shots (prevents spamming the network)
 const HIT_FLASH_DURATION_MS = 180;  // how long a player stays flashed white after being hit
 const HIT_MARKER_DURATION_MS = 180; // how long the shooter's own screen-edge hit flash lasts
@@ -93,14 +98,43 @@ const RESPAWN_COOLDOWN_MS = 3000;
 // --- First-person camera ---
 const EYE_HEIGHT = 1.6; // world units above the player's feet
 const MOUSE_LOOK_SENSITIVITY = 0.0025; // radians of turn per pixel of mouse movement
+const MOUSE_PITCH_SENSITIVITY = 0.0022; // vertical look, a touch slower than horizontal
 const TOUCH_LOOK_SENSITIVITY = 0.006;  // radians of turn per pixel of touch drag (touch screens are smaller, so a bit more sensitive per pixel)
+
+// --- Look pitch (up/down aim), shared by every crosshair mode ---
+// aimPitch is radians: 0 = level, positive = looking up, negative = down.
+// Clamped so you can't roll the camera past straight up/down.
+const AIM_PITCH_MIN = -1.15; // ~ -66°
+const AIM_PITCH_MAX = 1.15;  // ~ +66°
+// Third-person can't tilt as far without the orbit camera dropping through
+// the floor, so its pitch drives the camera's beta angle within a safe band
+// around this resting angle. Accuracy doesn't depend on the exact tilt -
+// shots always follow the actual on-screen crosshair ray (see
+// computeAimDirection) - so a compressed third-person tilt is fine.
+const TP_BASE_BETA = Math.PI / 2.4; // ~75° from vertical (the old resting chase angle)
+const TP_PITCH_TO_BETA = 0.42;      // how much aimPitch swings beta
+const TP_BETA_MIN = 0.85;           // camera highest (looking down)
+const TP_BETA_MAX = 1.62;           // camera lowest (looking up) - stays above ground
+
+// --- Aim-down-sights (ADS): hold to steady + zoom for a real accuracy gain ---
+const HIPFIRE_FOV = 0.8;        // Babylon's default field of view (radians)
+const ADS_FOV = 0.5;            // zoomed-in while aiming
+const FOV_LERP_SPEED = 12;      // how fast the zoom eases in/out
+const ADS_SENS_FACTOR = 0.55;   // look slower while zoomed, for finer aim
+const HIPFIRE_SPREAD_RAD = 0.045; // ~2.5° random cone on hip-fire...
+const ADS_SPREAD_RAD = 0;       // ...vs pinpoint while aiming down sights
 
 // --- Gamepad (Console) ---
 const GAMEPAD_DEADZONE = 0.2; // ignore stick input this close to center (avoids drift from imprecise sticks)
 const GAMEPAD_FIRE_BUTTON_INDEX = 7; // right trigger on the "standard" gamepad mapping (Xbox/PlayStation/etc)
 const GAMEPAD_ALT_FIRE_BUTTON_INDEX = 0; // A/Cross too - some Bluetooth pads map triggers unusually
-const GAMEPAD_AIM_LERP_SPEED = 12; // how fast aim glides to the stick's angle (scaled by the sensitivity slider)
+const GAMEPAD_ADS_BUTTON_INDEX = 6;  // left trigger = hold to aim (mirrors PC's right-mouse ADS)
+const GAMEPAD_PERSP_BUTTON_INDEX = 3; // Y/Triangle toggles first/third person
+const GAMEPAD_YAW_RATE = 2.6;   // radians/sec of turn at full right-stick deflection
+const GAMEPAD_PITCH_RATE = 1.8; // radians/sec of pitch at full deflection (a bit gentler than yaw)
 const GAMEPAD_GRACE_PERIOD_MS = 2000; // how long to wait in Console mode before showing "no controller"
+// (The old GAMEPAD_AIM_LERP_SPEED is gone: Console aim is now rate-based,
+// integrated directly, so there's no "glide toward a target angle" to tune.)
 
 // --- In-game testing menu state ---
 // Multiplies every look/turn speed (mouse, touch drag, turn stick, gamepad
@@ -187,10 +221,14 @@ const SWARM_COMMAND_SCATTER = 2.5; // random spread so tapped minions don't perf
 // (its own element) or nothing.
 const DUAL_STICK_STRIP_FRACTION = 0.35;
 // Right stick: full deflection turns you this fast (radians/second),
-// scaled by the sensitivity slider - same feel family as the legacy
-// turn-stick experiment, but here it's a pure camera/aim stick: releasing
-// it does NOT fire (firing has its own placeholder button).
+// scaled by the sensitivity slider. It is now an ADS + fire stick:
+// holding it aims-down-sights (steadier + zoomed), releasing it fires one
+// shot in the current aim (see the ADS section in 01_Platform_Playstyles).
 const DUAL_TURN_MAX_RATE = 3.0;
+// Vertical deflection pitches the aim up/down. Deliberately a lower rate
+// than horizontal turning - vertical aim wants finer control on a phone.
+const DUAL_PITCH_MAX_RATE = 2.0;
+const TOUCH_LOOK_PITCH_FACTOR = 0.6; // mobile vertical look is slower than horizontal
 
 // --- Gesture pad: recognizing the drawn stroke ---
 const GESTURE_MIN_STROKE_PX = 30;    // shorter marks are ignored (accidental taps)
@@ -326,6 +364,26 @@ const MODE_CONFIG = {
 
 let currentMode = null; // set once the player picks a join button
 
+// Effective camera type for the CURRENT session. It starts as the mode's
+// default (MODE_CONFIG[mode].cameraType) but Console & Mobile can toggle
+// between first- and third-person mid-match, so the render loop, aiming,
+// and own-capsule visibility all read THIS variable rather than the static
+// MODE_CONFIG value. PC never changes it (locked first-person this session).
+let currentCameraType = null;
+
+// Which camera types show a screen-center crosshair and therefore aim by
+// "shoot wherever the crosshair points" (see computeAimDirection). The
+// top-down stick modes are NOT crosshair modes - they aim by facing.
+function isCrosshairCameraType(ct) {
+  return ct === 'first-person' || ct === 'third-person-chase' || ct === 'third-person-fixed';
+}
+
+// --- Shared look pitch + aim-down-sights state (all crosshair modes) ---
+// Yaw stays per-input (pcAimYaw / gamepadAimYaw / touchAimYaw) since only
+// one input scheme is ever active, but a single shared pitch is simplest.
+let aimPitch = 0;       // radians, 0 = level, + = up (clamped to AIM_PITCH_*)
+let adsActive = false;  // aim-down-sights currently held: zoom + steady + no spread
+
 // ----------------------------------------------------------------------------
 // SCENE SETUP (created once at load - camera/players/input are added later,
 // once a mode is picked, by startGame() near the bottom of this file)
@@ -417,6 +475,13 @@ function addObstacleBox(name, x, z, width, height, depth) {
     maxX: x + width / 2 + projectileRadius,
     minZ: z - depth / 2 - projectileRadius,
     maxZ: z + depth / 2 + projectileRadius,
+    // Vertical extent: the box sits from the ground (y=0) up to its height.
+    // Now that shots can be aimed up/down, a projectile only stops on a box
+    // if it's actually AT the box's height - so you can arc a shot over a
+    // low crate instead of it magically eating the bolt.
+    minY: 0,
+    maxY: height + projectileRadius,
+    height,
   });
   return box;
 }
@@ -446,9 +511,11 @@ addObstacleBox('wall-west', -MAP_HALF, 0, WALL_THICKNESS, WALL_HEIGHT, MAP_SIZE 
 let camera = null; // created by createCameraForMode() once a mode is picked
 
 // Builds the right camera for the chosen mode. See the cameraType docs in
-// MODE_CONFIG above for what each type means.
-function createCameraForMode(mode) {
-  const cameraType = MODE_CONFIG[mode].cameraType;
+// MODE_CONFIG above for what each type means. `cameraTypeOverride` lets the
+// perspective toggle (Console/Mobile) request first- or third-person
+// regardless of the mode's default.
+function createCameraForMode(mode, cameraTypeOverride) {
+  const cameraType = cameraTypeOverride || MODE_CONFIG[mode].cameraType;
 
   if (cameraType === 'first-person') {
     // UniversalCamera is Babylon's free-look camera - we position and
@@ -527,6 +594,35 @@ function createCameraForMode(mode) {
     new BABYLON.Vector3(0, 1, 0),
     scene
   );
+}
+
+// Shows or hides the LOCAL player's own capsule (plus its gun/barrel) based
+// on the current perspective: hidden in first-person (the camera is inside
+// your head), visible in third-person (so you can watch your own dashes and
+// movement). Only touches visibility, never the mesh's realness for hit
+// detection or for other players. Pass the capsule explicitly (addPlayer
+// hasn't stored it in playerAvatars yet when it first calls this).
+function applyOwnCapsuleVisibility(capsuleMaybe) {
+  const capsule = capsuleMaybe || (playerAvatars[localPlayerId] && playerAvatars[localPlayerId].mesh);
+  if (!capsule) return;
+  const visible = currentCameraType !== 'first-person';
+  capsule.isVisible = visible;
+  capsule.getChildMeshes().forEach((m) => { m.isVisible = visible; });
+}
+
+// Console & Mobile can flip between first- and third-person mid-match. PC is
+// locked first-person this session, and the top-down stick modes don't have
+// a sensible "first-person" so they're excluded too. Rebuilds the camera in
+// place (keeping the same socket/session) and refreshes own-body visibility.
+function togglePerspective() {
+  if (currentMode !== 'console' && currentMode !== 'mobile') return;
+  currentCameraType = currentCameraType === 'first-person' ? 'third-person-chase' : 'first-person';
+  if (camera) camera.dispose();
+  camera = createCameraForMode(currentMode, currentCameraType);
+  camera.fov = adsActive ? ADS_FOV : HIPFIRE_FOV; // start the fresh camera at the right zoom
+  applyOwnCapsuleVisibility();
+  const label = currentCameraType === 'first-person' ? '1st' : '3rd';
+  perspectiveToggleBtnEl.innerHTML = `&#128065; view: ${label}`;
 }
 
 // ----------------------------------------------------------------------------
@@ -682,11 +778,16 @@ function addPlayer(id, playerData) {
   // eyes. Leaving the mesh visible would mean staring at the inside of
   // your own capsule. It stays fully real for hit-detection and for
   // everyone ELSE, who still sees you normally; only your own local
-  // rendering of yourself is hidden.
-  if (id === localPlayerId && MODE_CONFIG[currentMode].cameraType === 'first-person') {
-    capsule.isVisible = false;
-    // isVisible doesn't cascade - sweep every attached piece (gun, barrel)
-    capsule.getChildMeshes().forEach((m) => { m.isVisible = false; });
+  // rendering of yourself is hidden. (Applied via applyOwnCapsuleVisibility
+  // so the perspective toggle can flip it live.)
+  if (id === localPlayerId) {
+    // Never let our OWN camera-aim ray (see computeAimDirection) hit our
+    // own body or gun - the shot should pass through us to whatever the
+    // crosshair is actually over. Remote players stay pickable (they're
+    // valid targets); only our own local avatar opts out.
+    capsule.isPickable = false;
+    capsule.getChildMeshes().forEach((m) => { m.isPickable = false; });
+    applyOwnCapsuleVisibility(capsule);
   }
 
   // Only the LOCAL player's capsule needs to be collision-aware (it's the
@@ -794,6 +895,10 @@ function spawnMinions(count, colorHex, spawnX, spawnZ, scale) {
     const { capsule, nose } = createCapsuleMesh(`minion-${i}`, colorHex);
     capsule.scaling.setAll(scale);
     capsule.position.set(spawnX + off.x, 0.9 * scale, spawnZ + off.z); // 0.9*scale keeps the shrunk capsule resting on the ground
+    // Our own minions never block our own aim ray (they're not self-targets);
+    // keep them non-pickable so shooting past your own squad "just works".
+    capsule.isPickable = false;
+    capsule.getChildMeshes().forEach((m) => { m.isPickable = false; });
     // Every one of OUR minions gets a small facing reticle, so you can
     // read at a glance who each one is turning toward / about to zap.
     attachAimReticle(capsule, colorHex, 1.3, 0.4);
@@ -1145,16 +1250,31 @@ function handlePcMouseLook(e) {
   // provide this whether or not Pointer Lock is active - Pointer Lock just
   // additionally hides the cursor and stops it hitting the screen edge, so
   // we request it for polish but don't depend on it for the core mechanic.
-  pcAimYaw += e.movementX * MOUSE_LOOK_SENSITIVITY * sensitivityMultiplier;
+  // While aiming down sights, slow the look for finer aim.
+  const adsFactor = adsActive ? ADS_SENS_FACTOR : 1;
+  pcAimYaw += e.movementX * MOUSE_LOOK_SENSITIVITY * sensitivityMultiplier * adsFactor;
+  // movementY up (negative) should look UP (+pitch). Clamp so you can't
+  // flip the camera over the top.
+  aimPitch = clamp(aimPitch - e.movementY * MOUSE_PITCH_SENSITIVITY * sensitivityMultiplier * adsFactor, AIM_PITCH_MIN, AIM_PITCH_MAX);
 }
 window.addEventListener('mousemove', handlePcMouseLook);
 
 canvas.addEventListener('pointerdown', (e) => {
-  if (currentMode === 'pc' && e.button === 0) {
+  if (currentMode !== 'pc') return;
+  if (e.button === 0) {
     tryFireProjectile();
     if (canvas.requestPointerLock) canvas.requestPointerLock();
+  } else if (e.button === 2) {
+    adsActive = true; // hold right mouse to aim down sights
   }
 });
+// Right-mouse release ends ADS. Listened on window (not just the canvas) so
+// a release that happens after the cursor left the canvas still registers.
+window.addEventListener('pointerup', (e) => {
+  if (currentMode === 'pc' && e.button === 2) adsActive = false;
+});
+// Suppress the browser context menu so right-click-to-aim doesn't pop it.
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ----------------------------------------------------------------------------
 // INPUT: Console (gamepad)
@@ -1165,6 +1285,7 @@ canvas.addEventListener('pointerdown', (e) => {
 // listening for anything here.
 let gamepadAimYaw = 0; // holds its last value when the stick is released, rather than snapping to 0
 let gamepadFireWasHeld = false; // edge-detection so holding the trigger doesn't fire every single frame
+let gamepadPerspWasHeld = false; // edge-detection for the perspective-toggle button
 let consoleModeEnteredAt = 0;   // when Console mode started - drives the "no controller" grace period
 
 function applyDeadzone(value) {
@@ -1180,7 +1301,7 @@ function readGamepadState() {
   for (let i = 0; i < pads.length; i++) {
     if (pads[i]) { pad = pads[i]; break; }
   }
-  if (!pad) return { connected: false, moveX: 0, moveZ: 0, hasAimInput: false, aimX: 0, aimY: 0, firePressed: false };
+  if (!pad) return { connected: false, moveX: 0, moveZ: 0, aimX: 0, aimY: 0, firePressed: false, adsHeld: false, perspPressed: false };
 
   const leftX = applyDeadzone(pad.axes[0] || 0);
   const leftY = applyDeadzone(pad.axes[1] || 0);
@@ -1197,14 +1318,22 @@ function readGamepadState() {
     (!!fireButton && (fireButton.pressed || fireButton.value > 0.5)) ||
     (!!altFireButton && altFireButton.pressed);
 
+  // Left trigger = hold to aim down sights (mirrors PC's right-mouse).
+  const adsButton = pad.buttons[GAMEPAD_ADS_BUTTON_INDEX];
+  const adsHeld = !!adsButton && (adsButton.pressed || adsButton.value > 0.4);
+  // Y/Triangle = toggle perspective (edge-detected by the caller).
+  const perspButton = pad.buttons[GAMEPAD_PERSP_BUTTON_INDEX];
+  const perspPressed = !!perspButton && perspButton.pressed;
+
   return {
     connected: true,
     moveX: leftX,
     moveZ: -leftY, // gamepad Y axis is inverted (up = negative) relative to our +Z-forward convention
-    hasAimInput: rightX !== 0 || rightY !== 0,
-    aimX: rightX,
-    aimY: -rightY,
+    aimX: rightX,  // right-stick horizontal -> yaw RATE (turn), consumed in the render loop
+    aimY: -rightY, // right-stick vertical (up = positive) -> pitch RATE (look up)
     firePressed,
+    adsHeld,
+    perspPressed,
   };
 }
 
@@ -1576,6 +1705,14 @@ const gestureZoneEl = document.getElementById('gestureZone');
 const gestureCanvasEl = document.getElementById('gestureCanvas');
 const gestureResultLabelEl = document.getElementById('gestureResultLabel');
 const fireButtonEl = document.getElementById('fireButton');
+const perspectiveToggleBtnEl = document.getElementById('perspectiveToggleBtn');
+
+// Mobile's on-screen first/third-person toggle (Console uses a gamepad
+// button for the same thing).
+perspectiveToggleBtnEl.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  togglePerspective();
+});
 
 // Trace/result colors per gesture type (also used for the in-world path line)
 const GESTURE_COLORS = {
@@ -1595,8 +1732,10 @@ let dualMoveX = 0; // -1..1, same convention as the legacy move stick
 let dualMoveZ = 0;
 let dualAimTouchId = null;
 let dualAimOriginX = 0;
-let dualTurnX = 0; // -1..1 horizontal deflection -> turn rate
-let fireHeld = false; // fire button held: the render loop fires on cooldown
+let dualAimOriginY = 0;
+let dualTurnX = 0; // -1..1 horizontal deflection -> yaw (turn) rate
+let dualTurnY = 0; // -1..1 vertical deflection (up = positive) -> pitch rate
+let fireHeld = false; // (legacy) placeholder fire button held - removed in the Drift Deck pass
 
 // --- Gesture pad state ---
 let gestureCtx = null;       // 2d context for drawing the finger trace
@@ -1642,7 +1781,10 @@ function onDualTouchStart(e) {
   } else if (!isLeftHalf(x) && dualAimTouchId === null) {
     dualAimTouchId = e.pointerId;
     dualAimOriginX = x;
+    dualAimOriginY = y;
     dualTurnX = 0;
+    dualTurnY = 0;
+    adsActive = true; // grabbing the aim stick aims down sights (steady + zoom)
     showAimJoystickAt(x, y, true); // blue "turn stick" look
   }
 }
@@ -1667,11 +1809,10 @@ function onDualTouchMove(e) {
     dualMoveZ = -(knobY / JOYSTICK_MAX_RADIUS);
   } else if (e.pointerId === dualAimTouchId) {
     const dx = x - dualAimOriginX;
-    moveAimJoystickKnob(dx, 0); // knob slides horizontally only - it's a yaw-rate stick
+    const dy = y - dualAimOriginY;
+    moveAimJoystickKnob(dx, dy); // 2D now: horizontal = turn, vertical = look up/down
     dualTurnX = clamp(dx / JOYSTICK_MAX_RADIUS, -1, 1);
-    // NOTE: no pitch/vertical aim for now - the map is flat and every
-    // projectile flies level, so up/down aim would be cosmetic. Revisit
-    // when the map gets verticality (see the map-session dependency).
+    dualTurnY = clamp(-dy / JOYSTICK_MAX_RADIUS, -1, 1); // push up (dy<0) = look up
   }
 }
 
@@ -1682,11 +1823,15 @@ function onDualTouchEnd(e) {
     dualMoveZ = 0;
     joystickBaseEl.style.display = 'none';
   } else if (e.pointerId === dualAimTouchId) {
-    // Releasing the aim stick does NOTHING but stop turning - deliberately
-    // not a fire trigger (that was the old experiments' scheme).
+    // Releasing the aim stick FIRES one shot in the current aim (the ADS
+    // aim-and-release scheme from the design session), then drops out of
+    // aim-down-sights.
     dualAimTouchId = null;
     dualTurnX = 0;
+    dualTurnY = 0;
     hideAimJoystick();
+    tryFireProjectile();
+    adsActive = false;
   }
 }
 
@@ -2453,7 +2598,8 @@ function maybeSendPositionToServer(deltaMs) {
 // Each entry: { mesh, ownerId, dirX, dirZ, distanceTraveled }
 const activeProjectiles = [];
 
-function spawnProjectile({ ownerId, x, y, z, dirX, dirZ, color }) {
+function spawnProjectile({ ownerId, x, y, z, dirX, dirY, dirZ, color }) {
+  dirY = typeof dirY === 'number' ? dirY : 0; // older senders (or top-down modes) fire level
   // A stretched thin "bolt" instead of a ball - an elongated shape reads
   // its direction of travel at a glance, which a sphere can't.
   const mesh = BABYLON.MeshBuilder.CreateCylinder(
@@ -2462,11 +2608,20 @@ function spawnProjectile({ ownerId, x, y, z, dirX, dirZ, color }) {
     scene
   );
   mesh.position.set(x, y, z);
-  // Cylinders are built standing up (+Y). Lay it flat, then point it down
-  // its flight path - projectiles fly straight, so this is a one-time
-  // orientation at spawn, not per-frame work.
-  mesh.rotation.x = Math.PI / 2;
-  mesh.rotation.y = Math.atan2(dirX, dirZ);
+  mesh.isPickable = false; // never let the aim-ray pick a flying bolt
+  // Cylinders are built standing up (+Y). Rotate that +Y axis onto the 3D
+  // flight direction so the bolt points where it's going, up/down included.
+  // (One-time at spawn - projectiles fly straight.)
+  const dir = new BABYLON.Vector3(dirX, dirY, dirZ).normalize();
+  const axis = BABYLON.Vector3.Cross(BABYLON.Axis.Y, dir);
+  if (axis.lengthSquared() < 1e-6) {
+    // Direction is (anti)parallel to +Y (a near-vertical shot): no rotation
+    // axis; flip 180° if pointing straight down, else leave upright.
+    if (dir.y < 0) mesh.rotation.x = Math.PI;
+  } else {
+    const angle = Math.acos(clamp(BABYLON.Vector3.Dot(BABYLON.Axis.Y, dir), -1, 1));
+    mesh.rotationQuaternion = BABYLON.Quaternion.RotationAxis(axis.normalize(), angle);
+  }
 
   const material = new BABYLON.StandardMaterial('projectileMat', scene);
   material.diffuseColor = BABYLON.Color3.FromHexString(color);
@@ -2477,6 +2632,7 @@ function spawnProjectile({ ownerId, x, y, z, dirX, dirZ, color }) {
     mesh,
     ownerId,
     dirX,
+    dirY,
     dirZ,
     distanceTraveled: 0,
     // Shots PIERCE players/minions (only walls and max range stop them),
@@ -2489,6 +2645,46 @@ function spawnProjectile({ ownerId, x, y, z, dirX, dirZ, color }) {
   });
 }
 
+// Computes the world-space direction to fire so that the shot goes exactly
+// where the screen-center crosshair points - in full 3D, for both first-
+// and third-person. THIS is the fix for the old "shots land below the
+// crosshair" bug: previously we fired horizontally from the player's chest
+// while the camera looked from a different height/angle, so the bolt and
+// the crosshair were two different lines that never met. Now we cast a ray
+// from the crosshair through the camera, find what it's actually over, and
+// aim the muzzle at that point.
+function computeAimDirection(muzzle) {
+  const cx = canvas.clientWidth / 2;
+  const cy = canvas.clientHeight / 2;
+  const ray = scene.createPickingRay(cx, cy, BABYLON.Matrix.Identity(), camera);
+  // Consider only real, targetable geometry: our own body/gun and in-flight
+  // projectiles are non-pickable, so the ray sails through them to whatever
+  // we're truly pointing at (ground, cover, an enemy).
+  const pick = scene.pickWithRay(ray, (m) => m.isPickable && m.isEnabled() && m.isVisible);
+  let point;
+  if (pick && pick.hit && pick.pickedPoint) point = pick.pickedPoint;
+  else point = ray.origin.add(ray.direction.scale(PROJECTILE_MAX_DISTANCE + 10)); // nothing hit: aim far along the ray
+  let dx = point.x - muzzle.x;
+  let dy = point.y - muzzle.y;
+  let dz = point.z - muzzle.z;
+  let len = Math.hypot(dx, dy, dz);
+  if (len < 1e-4) { dx = ray.direction.x; dy = ray.direction.y; dz = ray.direction.z; len = Math.hypot(dx, dy, dz) || 1; }
+  return { x: dx / len, y: dy / len, z: dz / len };
+}
+
+// Nudges an aim direction by a small random cone (hip-fire inaccuracy).
+// ADS passes 0, so aiming down sights is pinpoint - a real, earned accuracy
+// gain the player can feel.
+function applySpread(dir, spread) {
+  if (spread <= 0) return dir;
+  let yaw = Math.atan2(dir.x, dir.z);
+  let pitch = Math.asin(clamp(dir.y, -1, 1));
+  yaw += (Math.random() * 2 - 1) * spread;
+  pitch += (Math.random() * 2 - 1) * spread;
+  const cp = Math.cos(pitch);
+  return { x: Math.sin(yaw) * cp, y: Math.sin(pitch), z: Math.cos(yaw) * cp };
+}
+
 let lastFireTime = 0;
 
 function tryFireProjectile() {
@@ -2499,25 +2695,36 @@ function tryFireProjectile() {
   if (now - lastFireTime < FIRE_COOLDOWN_MS) return; // still on cooldown
   lastFireTime = now;
 
-  // Fire in the direction the capsule is currently facing (set every
-  // frame by whichever aiming scheme the current mode uses).
-  const rotationY = local.mesh.rotation.y;
-  const dirX = Math.sin(rotationY);
-  const dirZ = Math.cos(rotationY);
+  // Muzzle sits at the player, up around chest height, so the bolt visibly
+  // leaves the shooter (rides with position.y, so a mid-dash shot starts at
+  // the player, not their shadow).
+  const muzzle = {
+    x: local.mesh.position.x,
+    y: local.mesh.position.y + 0.6,
+    z: local.mesh.position.z,
+  };
 
-  // Spawn slightly in front of the player (at the nose) so the
-  // projectile doesn't visually start out inside their own capsule.
-  // Height rides with the capsule (0.9 + 0.1 = the old fixed 1.0 while
-  // grounded) so shots fired mid-dash appear at the player, not at their
-  // feet's shadow. Hit checks are 2D (x/z), so height stays cosmetic.
+  // Crosshair modes aim by "shoot where the crosshair points" (3D). The
+  // old top-down stick modes (Squad/Swarm) still aim by facing - they have
+  // no centered crosshair, so a camera-ray would point at the ground.
+  let dir;
+  if (isCrosshairCameraType(currentCameraType)) {
+    dir = computeAimDirection(muzzle);
+    dir = applySpread(dir, adsActive ? ADS_SPREAD_RAD : HIPFIRE_SPREAD_RAD);
+  } else {
+    const r = local.mesh.rotation.y;
+    dir = { x: Math.sin(r), y: 0, z: Math.cos(r) };
+  }
+
   const spawnOffset = 0.7;
   const shotData = {
     ownerId: localPlayerId,
-    x: local.mesh.position.x + dirX * spawnOffset,
-    y: local.mesh.position.y + 0.1,
-    z: local.mesh.position.z + dirZ * spawnOffset,
-    dirX,
-    dirZ,
+    x: muzzle.x + dir.x * spawnOffset,
+    y: muzzle.y + dir.y * spawnOffset,
+    z: muzzle.z + dir.z * spawnOffset,
+    dirX: dir.x,
+    dirY: dir.y,
+    dirZ: dir.z,
     color: local.colorHex,
   };
 
@@ -2525,7 +2732,7 @@ function tryFireProjectile() {
   // this makes shooting feel instant), then tell the server so it can
   // relay the shot to everyone else.
   spawnProjectile(shotData);
-  socket.emit('fire', { x: shotData.x, y: shotData.y, z: shotData.z, dirX, dirZ });
+  socket.emit('fire', { x: shotData.x, y: shotData.y, z: shotData.z, dirX: dir.x, dirY: dir.y, dirZ: dir.z });
 }
 
 // Moves every active projectile forward, removes ones that traveled too
@@ -2542,20 +2749,27 @@ function updateProjectiles(deltaSeconds) {
   for (let i = activeProjectiles.length - 1; i >= 0; i--) {
     const proj = activeProjectiles[i];
     proj.mesh.position.x += proj.dirX * moveDistance;
+    proj.mesh.position.y += (proj.dirY || 0) * moveDistance; // 3D travel (aimed up/down)
     proj.mesh.position.z += proj.dirZ * moveDistance;
     proj.distanceTraveled += moveDistance;
 
     let shouldRemove = proj.distanceTraveled >= PROJECTILE_MAX_DISTANCE;
 
+    // A downward shot that reaches the ground stops there (no burrowing).
+    if (!shouldRemove && proj.mesh.position.y <= 0.05) shouldRemove = true;
+
     // Obstacles and border walls stop shots dead - checked FIRST (and on
     // every client identically, since this is static shared geometry with
     // no desync risk), so a shot that reaches a wall the same frame it
     // would have reached a player behind it correctly stops at the wall.
+    // Now height-aware: a shot only stops on a box if it's within the box's
+    // vertical extent, so you can arc a bolt clean over low cover.
     if (!shouldRemove) {
       const px = proj.mesh.position.x;
+      const py = proj.mesh.position.y;
       const pz = proj.mesh.position.z;
       for (const b of obstacleBounds) {
-        if (px >= b.minX && px <= b.maxX && pz >= b.minZ && pz <= b.maxZ) {
+        if (px >= b.minX && px <= b.maxX && pz >= b.minZ && pz <= b.maxZ && py >= b.minY && py <= b.maxY) {
           shouldRemove = true;
           break;
         }
@@ -2575,7 +2789,8 @@ function updateProjectiles(deltaSeconds) {
 
         const dx = avatar.mesh.position.x - proj.mesh.position.x;
         const dz = avatar.mesh.position.z - proj.mesh.position.z;
-        if (dx * dx + dz * dz < HIT_RADIUS * HIT_RADIUS) {
+        const dy = avatar.mesh.position.y - proj.mesh.position.y;
+        if (dx * dx + dz * dz < HIT_RADIUS * HIT_RADIUS && Math.abs(dy) < HIT_VERTICAL) {
           proj.hitTargets.add(id);
           socket.emit('hit', { targetId: id, damage: PLAYER_PROJECTILE_DAMAGE });
           triggerHitMarker();
@@ -2595,7 +2810,8 @@ function updateProjectiles(deltaSeconds) {
 
           const dx = m.mesh.position.x - proj.mesh.position.x;
           const dz = m.mesh.position.z - proj.mesh.position.z;
-          if (dx * dx + dz * dz < HIT_RADIUS * HIT_RADIUS) {
+          const dy = m.mesh.position.y - proj.mesh.position.y;
+          if (dx * dx + dz * dz < HIT_RADIUS * HIT_RADIUS && Math.abs(dy) < HIT_VERTICAL) {
             proj.hitTargets.add(key);
             socket.emit('minionHit', { ownerId, minionIndex: mi, damage: PLAYER_PROJECTILE_DAMAGE });
             triggerHitMarker();
@@ -2656,7 +2872,9 @@ scene.onBeforeRenderObservable.add(() => {
   const deltaMs = engine.getDeltaTime();
   const deltaSeconds = deltaMs / 1000;
   const inputType = MODE_CONFIG[currentMode].inputType;
-  const cameraType = MODE_CONFIG[currentMode].cameraType;
+  // Effective (possibly toggled) camera type, NOT the static MODE_CONFIG one,
+  // so the perspective toggle takes effect for movement space + camera follow.
+  const cameraType = currentCameraType;
 
   const local = playerAvatars[localPlayerId];
   if (local) {
@@ -2678,19 +2896,21 @@ scene.onBeforeRenderObservable.add(() => {
       const gp = readGamepadState();
       moveX = gp.moveX;
       moveZ = gp.moveZ;
-      if (gp.hasAimInput) {
-        // Glide toward the stick's angle instead of snapping instantly -
-        // this smoothing is also what gives the sensitivity slider
-        // something real to scale on Console (an instant snap has no
-        // "speed" to adjust). Shortest-path wrap so aiming across the
-        // -PI/PI seam doesn't spin the long way around.
-        const targetYaw = Math.atan2(gp.aimX, gp.aimY);
-        let aimDelta = targetYaw - gamepadAimYaw;
-        aimDelta = Math.atan2(Math.sin(aimDelta), Math.cos(aimDelta));
-        gamepadAimYaw += aimDelta * Math.min(1, GAMEPAD_AIM_LERP_SPEED * sensitivityMultiplier * deltaSeconds);
-      }
+      adsActive = gp.adsHeld; // left trigger held = aim down sights
+      const adsF = adsActive ? ADS_SENS_FACTOR : 1;
+      // Rate-based dual-axis aim (standard console-shooter feel): the right
+      // stick's horizontal deflection is a TURN rate and its vertical is a
+      // LOOK rate, integrated into yaw/pitch each frame. (Replaces the old
+      // "point the stick at a compass heading" scheme, which left no axis
+      // free for up/down look.)
+      gamepadAimYaw += gp.aimX * GAMEPAD_YAW_RATE * sensitivityMultiplier * adsF * deltaSeconds;
+      aimPitch = clamp(aimPitch + gp.aimY * GAMEPAD_PITCH_RATE * sensitivityMultiplier * adsF * deltaSeconds, AIM_PITCH_MIN, AIM_PITCH_MAX);
       if (gp.firePressed && !gamepadFireWasHeld) tryFireProjectile();
       gamepadFireWasHeld = gp.firePressed;
+      // Y/Triangle toggles first/third person (edge-detected so one press =
+      // one toggle, not a flicker every frame it's held).
+      if (gp.perspPressed && !gamepadPerspWasHeld) togglePerspective();
+      gamepadPerspWasHeld = gp.perspPressed;
 
       // Friendly feedback instead of a mysteriously frozen game when no
       // controller is paired (the most likely story behind "console mode
@@ -2760,10 +2980,17 @@ scene.onBeforeRenderObservable.add(() => {
     } else if (inputType === 'gamepad') {
       local.mesh.rotation.y = gamepadAimYaw;
     } else if (inputType === 'touch-dual') {
-      // Right stick: horizontal deflection = turn RATE, integrated into
-      // yaw each frame (push further = turn faster). Sensitivity slider
-      // applies, same as every other look input. Works mid-dash too.
-      touchAimYaw += dualTurnX * DUAL_TURN_MAX_RATE * sensitivityMultiplier * deltaSeconds;
+      // Right stick: horizontal deflection = turn (yaw) RATE, vertical =
+      // look (pitch) RATE, both integrated each frame (push further = faster).
+      // While the stick is held we're aiming down sights, so look is slowed
+      // for finer aim. Works mid-dash too. Vertical is deliberately gentler
+      // than horizontal (TOUCH_LOOK_PITCH_FACTOR).
+      const adsF = adsActive ? ADS_SENS_FACTOR : 1;
+      touchAimYaw += dualTurnX * DUAL_TURN_MAX_RATE * sensitivityMultiplier * adsF * deltaSeconds;
+      aimPitch = clamp(
+        aimPitch + dualTurnY * DUAL_PITCH_MAX_RATE * TOUCH_LOOK_PITCH_FACTOR * sensitivityMultiplier * adsF * deltaSeconds,
+        AIM_PITCH_MIN, AIM_PITCH_MAX
+      );
       local.mesh.rotation.y = touchAimYaw;
     } else if (inputType === 'touch') {
       if (currentMode === 'mobile-squad') {
@@ -2789,6 +3016,9 @@ scene.onBeforeRenderObservable.add(() => {
       camera.position.y = local.mesh.position.y - 0.9 + EYE_HEIGHT; // relative to feet, not capsule center
       camera.position.z = local.mesh.position.z;
       camera.rotation.y = local.mesh.rotation.y;
+      // Look up/down. Babylon's UniversalCamera pitches with +rotation.x =
+      // looking DOWN, so negate our "up-positive" aimPitch.
+      camera.rotation.x = -aimPitch;
     } else {
       // Both third-person variants and the top-down camera share the same
       // position-follow behavior (glide the ORBIT TARGET toward the
@@ -2810,8 +3040,24 @@ scene.onBeforeRenderObservable.add(() => {
         let delta = targetAlpha - camera.alpha;
         delta = Math.atan2(Math.sin(delta), Math.cos(delta));
         camera.alpha += delta * rotLerpFactor;
+
+        // Look up/down: aimPitch swings the orbit's BETA (elevation) within
+        // a floor-safe band. The camera keeps looking at the player, so a
+        // higher beta drops the camera lower and tilts the whole view up.
+        // Firing accuracy doesn't hinge on the exact tilt - shots follow
+        // the real crosshair ray (computeAimDirection) - so this only has
+        // to feel right, not be geometrically perfect.
+        const targetBeta = clamp(TP_BASE_BETA + aimPitch * TP_PITCH_TO_BETA, TP_BETA_MIN, TP_BETA_MAX);
+        camera.beta += (targetBeta - camera.beta) * rotLerpFactor;
       }
     }
+
+    // Aim-down-sights zoom: ease the field of view toward the ADS or hip-fire
+    // value. adsActive is only ever set true by crosshair modes, and the
+    // hip-fire value equals Babylon's default, so this is a no-op for the
+    // top-down stick modes.
+    const targetFov = adsActive ? ADS_FOV : HIPFIRE_FOV;
+    camera.fov += (targetFov - camera.fov) * Math.min(1, FOV_LERP_SPEED * deltaSeconds);
 
     maybeSendPositionToServer(deltaMs);
   }
@@ -2933,6 +3179,11 @@ function leaveCurrentMode() {
   turnTouchId = null;
   turnJoystickX = 0;
   gamepadFireWasHeld = false;
+  gamepadPerspWasHeld = false;
+
+  // --- Shared aim (pitch + ADS) ---
+  aimPitch = 0;
+  adsActive = false;
 
   // --- Mobile dual-stick / gesture-pad state ---
   dualMoveTouchId = null;
@@ -2940,6 +3191,7 @@ function leaveCurrentMode() {
   dualMoveZ = 0;
   dualAimTouchId = null;
   dualTurnX = 0;
+  dualTurnY = 0;
   fireHeld = false;
   gesturePointerId = null;
   gesturePoints = [];
@@ -2957,6 +3209,7 @@ function leaveCurrentMode() {
   touchHintEl.style.display = 'none';
   gestureZoneEl.style.display = 'none';
   fireButtonEl.style.display = 'none';
+  perspectiveToggleBtnEl.style.display = 'none';
   document.getElementById('crosshair').style.display = 'none';
   document.getElementById('hudHealthBar').style.display = 'none';
   document.getElementById('inGameMenu').style.display = 'none';
@@ -3024,6 +3277,12 @@ function startGame(mode) {
   leaveCurrentMode(); // safe no-op on the very first call, when nothing exists yet
 
   currentMode = mode;
+  // Effective camera type starts at the mode's default. Console & Mobile
+  // default to third-person (so you can watch your own dashes/movement) and
+  // can toggle to first-person; PC stays first-person; the rest never change.
+  currentCameraType = MODE_CONFIG[mode].cameraType;
+  aimPitch = 0;
+  adsActive = false;
 
   document.getElementById('joinScreen').style.display = 'none';
   respawnCountdownEl.style.display = 'none';
@@ -3049,13 +3308,17 @@ function startGame(mode) {
     touchHintEl.style.display = 'block';
   }
 
-  // Crosshair for every mode where your facing IS your fire direction and
-  // the camera looks along it (PC, Console, Solo FPS, Solo TPS). Top-down
-  // modes aim with sticks/taps instead - they get ground reticles, not a
-  // screen-center dot that would point at nothing meaningful.
-  const ct = MODE_CONFIG[mode].cameraType;
+  // Crosshair for every mode where the camera looks along your aim and you
+  // shoot toward screen center (PC, Console, Mobile, Solo FPS/TPS). Top-down
+  // stick modes aim with sticks/taps instead - they get ground reticles, not
+  // a screen-center dot that would point at nothing meaningful.
   document.getElementById('crosshair').style.display =
-    (ct === 'first-person' || ct === 'third-person-chase' || ct === 'third-person-fixed') ? 'block' : 'none';
+    isCrosshairCameraType(currentCameraType) ? 'block' : 'none';
+
+  // Perspective-toggle button: only Console & Mobile can switch first/third
+  // person (PC is locked first-person this session). Console toggles with a
+  // gamepad button; Mobile needs an on-screen button.
+  perspectiveToggleBtnEl.style.display = (mode === 'mobile') ? 'block' : 'none';
 
   // Own-health bar: any mode where you have a body that can take damage.
   // Swarm Command has no body - its "health" is the swarm itself.
@@ -3083,7 +3346,7 @@ function startGame(mode) {
 
   if (mode === 'console') consoleModeEnteredAt = performance.now();
 
-  camera = createCameraForMode(mode);
+  camera = createCameraForMode(mode, currentCameraType);
   connectToServer();
 
   // Re-assert the test-mode toggle on every fresh connection (each

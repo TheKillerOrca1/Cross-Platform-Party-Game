@@ -263,6 +263,29 @@
       background: rgba(231, 76, 60, 0.5);
     }
 
+    /* Perspective toggle (Mobile): switch first/third person. Small, tucked
+       top-left under the HUD so it's out of the thumbs' way. */
+    #perspectiveToggleBtn {
+      position: absolute;
+      left: 8px;
+      top: 44px;
+      z-index: 6;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      background: rgba(20, 22, 26, 0.7);
+      color: #fff;
+      font-family: monospace;
+      font-size: 12px;
+      display: none;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #perspectiveToggleBtn:active {
+      background: rgba(60, 64, 72, 0.85);
+    }
+
     /* Highlight on the join button we auto-suggest for touch devices */
     .join-btn.suggested {
       border-color: #35e0ff;
@@ -471,6 +494,7 @@
     <div id="gestureResultLabel"></div>
   </div>
   <button id="fireButton">&#128293;</button>
+  <button id="perspectiveToggleBtn">&#128065; view: 3rd</button>
 
   <div id="crosshair"></div>
   <div id="hitMarker"></div>
