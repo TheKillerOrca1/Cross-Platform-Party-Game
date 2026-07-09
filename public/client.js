@@ -45,6 +45,18 @@ function setHudWarning(warning) {
 
 // Movement speed in world units per second (a "unit" is roughly a meter).
 const MOVE_SPEED = 4;
+// --- Vertical movement: gravity, jump, sprint, climb ---
+// Added so players can jump (PC), fall, stand on top of cover boxes, and
+// mount/climb ledges. Applies to every mode that has a walking avatar.
+const GRAVITY = 20;             // units/s^2 pulling the player down
+const JUMP_SPEED = 8;           // launch speed of a PC jump (~1.6u apex)
+const SPRINT_MULTIPLIER = 1.7;  // PC move-speed boost while holding Shift
+const CLIMB_RATE = 5;           // units/s the player scales a wall while mantling
+const CLIMB_REACH = 2.8;        // tallest ledge a climb can start onto (leaves the 3u border walls unclimbable, so you can't scale out of the arena)
+const CLIMB_MIN_LEDGE = 0.35;   // ledges shorter than this are just walked up; taller ones trigger a climb
+const PLAYER_RADIUS = 0.4;      // matches the capsule radius / collision ellipsoid
+const CAPSULE_HALF = 0.9;       // capsule center sits this far above the feet
+const LAND_TOLERANCE = 0.25;    // how far below a surface you can be and still settle onto it
 // The playable ground is MAP_SIZE x MAP_SIZE, ringed by border walls so
 // nobody can wander off into the void.
 const MAP_SIZE = 70;
@@ -384,6 +396,12 @@ function isCrosshairCameraType(ct) {
 let aimPitch = 0;       // radians, 0 = level, + = up (clamped to AIM_PITCH_*)
 let adsActive = false;  // aim-down-sights currently held: zoom + steady + no spread
 
+// --- Local player vertical state (gravity / jump / climb) ---
+let playerVY = 0;          // vertical velocity (units/s)
+let playerGrounded = true; // standing on ground or a box top?
+let jumpQueued = false;    // set by the PC jump key, consumed by the next physics step
+let climbState = null;     // while mantling a ledge: { topY, dirX, dirZ }
+
 // ----------------------------------------------------------------------------
 // SCENE SETUP (created once at load - camera/players/input are added later,
 // once a mode is picked, by startGame() near the bottom of this file)
@@ -482,6 +500,13 @@ function addObstacleBox(name, x, z, width, height, depth) {
     minY: 0,
     maxY: height + projectileRadius,
     height,
+    // Raw footprint (no projectile padding) + top surface height, used by
+    // the player's gravity/stand-on-top and climb logic.
+    cx: x,
+    cz: z,
+    halfW: width / 2,
+    halfD: depth / 2,
+    top: height,
   });
   return box;
 }
@@ -1232,6 +1257,22 @@ function flashMeshWhite(mesh, revertColorHex, holder) {
 const keysDown = {};
 window.addEventListener('keydown', (e) => {
   keysDown[e.key.toLowerCase()] = true;
+
+  // Escape opens/closes the pause menu (the in-game testing menu doubles as
+  // it). Works once a game has started - the menu button is our "are we in
+  // a match" signal. Note: Escape also drops pointer lock (browser default);
+  // clicking the canvas re-locks.
+  if (e.key === 'Escape' && document.getElementById('menuToggleBtn').style.display !== 'none') {
+    const m = document.getElementById('inGameMenu');
+    m.style.display = m.style.display === 'block' ? 'none' : 'block';
+    return;
+  }
+
+  if (currentMode === 'pc') {
+    // Space = jump (consumed in the vertical-physics step). preventDefault
+    // stops the page from scrolling on space.
+    if (e.key === ' ') { jumpQueued = true; e.preventDefault(); }
+  }
 });
 window.addEventListener('keyup', (e) => {
   keysDown[e.key.toLowerCase()] = false;
@@ -2860,6 +2901,94 @@ function triggerHitFlash(id) {
 }
 
 // ----------------------------------------------------------------------------
+// VERTICAL MOVEMENT: gravity, standing on boxes, jumping, climbing/mantling
+// ----------------------------------------------------------------------------
+// Highest surface the player can be resting on at (x,z): the map floor (0)
+// or the top of any cover box whose footprint they're over and which is at
+// or below their feet (so you land on box tops when you drop onto them).
+function groundSupportHeight(x, z, feetY) {
+  let support = 0;
+  for (const b of obstacleBounds) {
+    if (Math.abs(x - b.cx) <= b.halfW + PLAYER_RADIUS && Math.abs(z - b.cz) <= b.halfD + PLAYER_RADIUS) {
+      if (b.top <= feetY + LAND_TOLERANCE && b.top > support) support = b.top;
+    }
+  }
+  return support;
+}
+
+// Is the player pressing into a climbable ledge? Probes just ahead of the
+// player in their movement direction for a box whose top is above the feet
+// but within CLIMB_REACH - that's a wall you can mantle. Returns the climb
+// descriptor or null.
+function findClimbLedge(x, z, feetY, dirX, dirZ) {
+  if (dirX === 0 && dirZ === 0) return null;
+  const len = Math.hypot(dirX, dirZ) || 1;
+  const nx = dirX / len;
+  const nz = dirZ / len;
+  const probeX = x + nx * (PLAYER_RADIUS + 0.25);
+  const probeZ = z + nz * (PLAYER_RADIUS + 0.25);
+  let best = null;
+  for (const b of obstacleBounds) {
+    if (Math.abs(probeX - b.cx) <= b.halfW + 0.05 && Math.abs(probeZ - b.cz) <= b.halfD + 0.05) {
+      if (b.top > feetY + CLIMB_MIN_LEDGE && b.top <= feetY + CLIMB_REACH) {
+        if (!best || b.top < best.top) best = b; // prefer the lowest climbable ledge
+      }
+    }
+  }
+  return best ? { topY: best.top, dirX: nx, dirZ: nz } : null;
+}
+
+// Runs one step of the local player's vertical physics: an in-progress
+// climb, or gravity + support + jump. `moveX/moveZ` is this frame's WORLD
+// movement direction (for detecting a climb into a wall we're pushing on).
+function updateVerticalPhysics(local, dt, moveX, moveZ, hasMove) {
+  const pos = local.mesh.position;
+  let feetY = pos.y - CAPSULE_HALF;
+
+  // --- A climb/mantle is under way: scale straight up the wall ---
+  if (climbState) {
+    feetY += CLIMB_RATE * dt;
+    playerVY = 0;
+    playerGrounded = false;
+    if (feetY >= climbState.topY) {
+      // Cleared the lip: hop forward onto the ledge and finish.
+      feetY = climbState.topY + 0.02;
+      pos.x += climbState.dirX * (PLAYER_RADIUS + 0.3);
+      pos.z += climbState.dirZ * (PLAYER_RADIUS + 0.3);
+      climbState = null;
+      playerGrounded = true;
+    }
+    pos.y = feetY + CAPSULE_HALF;
+    return;
+  }
+
+  // --- Start a climb if we're pushing into a reachable ledge ---
+  if (hasMove) {
+    const ledge = findClimbLedge(pos.x, pos.z, feetY, moveX, moveZ);
+    if (ledge) { climbState = ledge; return; }
+  }
+
+  // --- Jump ---
+  if (jumpQueued) {
+    jumpQueued = false;
+    if (playerGrounded) { playerVY = JUMP_SPEED; playerGrounded = false; }
+  }
+
+  // --- Gravity + landing ---
+  const support = groundSupportHeight(pos.x, pos.z, feetY);
+  playerVY -= GRAVITY * dt;
+  let newFeetY = feetY + playerVY * dt;
+  if (newFeetY <= support) {
+    newFeetY = support;
+    playerVY = 0;
+    playerGrounded = true;
+  } else {
+    playerGrounded = false;
+  }
+  pos.y = newFeetY + CAPSULE_HALF;
+}
+
+// ----------------------------------------------------------------------------
 // MAIN RENDER LOOP
 // ----------------------------------------------------------------------------
 // Babylon calls this once per frame (typically 60 times/sec). Everything
@@ -2942,37 +3071,58 @@ scene.onBeforeRenderObservable.add(() => {
     //     movement: the screen never rotates, so up-on-the-stick = up-on-
     //     the-screen already holds without any transform.
     if (activeDash && inputType === 'touch-dual') {
-      // A recorded dash is playing back: it owns movement this frame.
-      // Stick movement is ignored until it lands, but aiming (below) and
-      // firing stay live - being able to track a target WHILE the dash
-      // animates is the whole point of recorded-then-executed gestures.
+      // A recorded dash is playing back: it owns movement this frame
+      // (horizontal AND vertical). Stick movement is ignored until it lands,
+      // but aiming (below) and firing stay live - tracking a target WHILE
+      // the dash animates is the whole point of recorded-then-executed.
       stepActiveDash(deltaSeconds, local);
-    } else if (moveX !== 0 || moveZ !== 0) {
-      const length = Math.sqrt(moveX * moveX + moveZ * moveZ);
-      const normX = moveX / length;
-      const normZ = moveZ / length;
+    } else {
+      // Normal movement: horizontal via moveWithCollisions (slides along
+      // cover), vertical via updateVerticalPhysics (gravity/jump/climb).
+      let worldMoveX = 0;
+      let worldMoveZ = 0;
+      const hasMove = moveX !== 0 || moveZ !== 0;
+      if (hasMove) {
+        const length = Math.sqrt(moveX * moveX + moveZ * moveZ);
+        const normX = moveX / length;
+        const normZ = moveZ / length;
 
-      let worldMoveX = normX;
-      let worldMoveZ = normZ;
-      if (cameraType === 'first-person' || cameraType === 'third-person-chase') {
-        const yaw = local.mesh.rotation.y;
-        const sin = Math.sin(yaw);
-        const cos = Math.cos(yaw);
-        worldMoveX = normX * cos + normZ * sin;
-        worldMoveZ = -normX * sin + normZ * cos;
+        worldMoveX = normX;
+        worldMoveZ = normZ;
+        if (cameraType === 'first-person' || cameraType === 'third-person-chase') {
+          const yaw = local.mesh.rotation.y;
+          const sin = Math.sin(yaw);
+          const cos = Math.cos(yaw);
+          worldMoveX = normX * cos + normZ * sin;
+          worldMoveZ = -normX * sin + normZ * cos;
+        }
+
+        // PC sprint: hold Shift to move faster.
+        const sprint = (currentMode === 'pc' && keysDown['shift']) ? SPRINT_MULTIPLIER : 1;
+
+        // moveWithCollisions sweeps the capsule ellipsoid against every
+        // checkCollisions mesh and SLIDES along surfaces. Skipped while
+        // mid-climb (updateVerticalPhysics hugs the wall going up instead).
+        if (!climbState) {
+          local.mesh.moveWithCollisions(new BABYLON.Vector3(
+            worldMoveX * MOVE_SPEED * sprint * deltaSeconds,
+            0,
+            worldMoveZ * MOVE_SPEED * sprint * deltaSeconds
+          ));
+        }
       }
 
-      // moveWithCollisions instead of directly mutating position: Babylon
-      // sweeps the capsule's ellipsoid against every checkCollisions mesh
-      // (obstacles + border walls) and SLIDES along surfaces rather than
-      // hard-stopping, which is what makes hugging cover feel natural.
-      // The Y component stays 0 - flat ground, no gravity in this game.
-      local.mesh.moveWithCollisions(new BABYLON.Vector3(
-        worldMoveX * MOVE_SPEED * deltaSeconds,
-        0,
-        worldMoveZ * MOVE_SPEED * deltaSeconds
-      ));
+      // Gravity, standing on box tops, jumping, and climbing onto ledges.
+      updateVerticalPhysics(local, deltaSeconds, worldMoveX, worldMoveZ, hasMove);
     }
+
+    // Hard arena clamp: no matter what (a fast dash into a corner, a climb,
+    // physics jitter), the player can never end up outside the border walls.
+    // This is the belt-and-suspenders fix for dashes clipping through the
+    // thin border wall.
+    const arenaBound = MAP_HALF - 1;
+    local.mesh.position.x = clamp(local.mesh.position.x, -arenaBound, arenaBound);
+    local.mesh.position.z = clamp(local.mesh.position.z, -arenaBound, arenaBound);
 
     // --- Aiming: apply whichever yaw source this mode uses ---
     if (inputType === 'keyboard-mouse') {
@@ -3026,6 +3176,9 @@ scene.onBeforeRenderObservable.add(() => {
       const lerpFactor = Math.min(1, CAMERA_LERP_SPEED * deltaSeconds);
       camera.target.x += (local.mesh.position.x - camera.target.x) * lerpFactor;
       camera.target.z += (local.mesh.position.z - camera.target.z) * lerpFactor;
+      // Follow the player's height too, so jumping/climbing onto a box keeps
+      // them framed (aim at ~mid-capsule, hence the +0.1 above feet-center).
+      camera.target.y += ((local.mesh.position.y + 0.1) - camera.target.y) * lerpFactor;
 
       if (cameraType === 'third-person-chase') {
         // Unlike the fixed twin-stick camera, this one also rotates to
@@ -3184,6 +3337,12 @@ function leaveCurrentMode() {
   // --- Shared aim (pitch + ADS) ---
   aimPitch = 0;
   adsActive = false;
+
+  // --- Vertical physics ---
+  playerVY = 0;
+  playerGrounded = true;
+  jumpQueued = false;
+  climbState = null;
 
   // --- Mobile dual-stick / gesture-pad state ---
   dualMoveTouchId = null;

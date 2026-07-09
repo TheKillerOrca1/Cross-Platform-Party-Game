@@ -42,13 +42,25 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      /* flex-start (not center) + scroll: with justify-content:center the
+         overflowing top gets clipped and is unreachable - a real problem on
+         a short landscape phone, and exactly the "can't scroll the death
+         menu" bug. Top-align and let it scroll instead. */
+      justify-content: flex-start;
       gap: 14px;
+      padding: 24px 12px;
+      box-sizing: border-box;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch; /* momentum scrolling on iOS */
       background: rgba(10, 12, 10, 0.95);
       font-family: sans-serif;
       color: #fff;
       z-index: 10;
     }
+    /* Center the menu vertically when it DOES fit, without breaking scroll
+       when it doesn't (auto margins on the first/last flex children). */
+    #joinScreen > h1:first-child { margin-top: auto; }
+    #joinScreen::after { content: ''; margin-top: auto; }
     #joinScreen h1 {
       margin: 0 0 10px;
       font-size: 22px;
