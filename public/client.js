@@ -432,13 +432,23 @@ let adsActive = false;  // aim-down-sights currently held: zoom + steady + no sp
 // --- Local player vertical state (gravity / jump / climb) ---
 let playerVY = 0;          // vertical velocity (units/s)
 let playerGrounded = true; // standing on ground or a box top?
+// The FEET height is the authoritative vertical state, NOT the capsule
+// center. This matters for crouch: ducking changes the capsule's height
+// (currentCapsuleHalf), and if we re-derived the feet from the center each
+// frame, that height change would look like the feet teleporting - which
+// used to make the player "fall", flip un-grounded, and jitter the crouch.
+// Keeping feet persistent means a crouch only moves the CENTER down while
+// the feet stay planted. Center = feet + currentCapsuleHalf.
+let playerFeetY = 0;
 let jumpQueued = false;    // set by the PC jump key, consumed by the next physics step
 let climbState = null;     // while mantling a ledge: { topY, dirX, dirZ }
 let pcFireHeld = false;    // left mouse held: the render loop auto-fires (cooldown-limited)
 let pcCrouching = false;   // PC crouch (Shift held): ducked, slower, shorter hitbox
 // Effective capsule half-height: 0.9 standing, lower while crouched, so the
-// body physically ducks (also lowers the first-person eye).
+// body physically ducks (also lowers the first-person eye). Eased smoothly
+// toward its target so ducking/standing isn't an instant snap.
 let currentCapsuleHalf = 0.9;
+const CROUCH_LERP_SPEED = 14; // how fast the capsule eases between stand/crouch height
 
 // ----------------------------------------------------------------------------
 // SCENE SETUP (created once at load - camera/players/input are added later,
@@ -895,6 +905,8 @@ function addPlayer(id, playerData) {
   // first mechanic that leaves the ground).
   const startY = typeof playerData.y === 'number' ? playerData.y : 0.9;
   capsule.position.y = startY;
+  // Seed the local player's authoritative feet height from the spawn center.
+  if (id === localPlayerId) playerFeetY = startY - CAPSULE_HALF;
 
   playerAvatars[id] = {
     mesh: capsule,
@@ -2396,7 +2408,8 @@ function endActiveDash(local) {
   local.mesh.scaling.y = 1; // stand back up after a slide's duck
   currentCapsuleHalf = CAPSULE_HALF;
   const support = groundSupportHeight(local.mesh.position.x, local.mesh.position.z, Infinity);
-  local.mesh.position.y = support + CAPSULE_HALF;
+  playerFeetY = support; // hand the feet back to the vertical physics
+  local.mesh.position.y = playerFeetY + CAPSULE_HALF;
   playerVY = 0;
   playerGrounded = true;
 
@@ -3141,29 +3154,29 @@ function findClimbLedge(x, z, feetY, dirX, dirZ) {
 // movement direction (for detecting a climb into a wall we're pushing on).
 function updateVerticalPhysics(local, dt, moveX, moveZ, hasMove) {
   const pos = local.mesh.position;
-  const half = currentCapsuleHalf; // lower while crouched, so the body ducks
-  let feetY = pos.y - half;
+  // playerFeetY is the source of truth (NOT pos.y - half), so a crouch that
+  // changes currentCapsuleHalf never phantom-moves the feet.
 
   // --- A climb/mantle is under way: scale straight up the wall ---
   if (climbState) {
-    feetY += CLIMB_RATE * dt;
+    playerFeetY += CLIMB_RATE * dt;
     playerVY = 0;
     playerGrounded = false;
-    if (feetY >= climbState.topY) {
+    if (playerFeetY >= climbState.topY) {
       // Cleared the lip: hop forward onto the ledge and finish.
-      feetY = climbState.topY + 0.02;
+      playerFeetY = climbState.topY + 0.02;
       pos.x += climbState.dirX * (PLAYER_RADIUS + 0.3);
       pos.z += climbState.dirZ * (PLAYER_RADIUS + 0.3);
       climbState = null;
       playerGrounded = true;
     }
-    pos.y = feetY + half;
+    pos.y = playerFeetY + currentCapsuleHalf;
     return;
   }
 
   // --- Start a climb if we're pushing into a reachable ledge ---
   if (hasMove) {
-    const ledge = findClimbLedge(pos.x, pos.z, feetY, moveX, moveZ);
+    const ledge = findClimbLedge(pos.x, pos.z, playerFeetY, moveX, moveZ);
     if (ledge) { climbState = ledge; return; }
   }
 
@@ -3173,10 +3186,10 @@ function updateVerticalPhysics(local, dt, moveX, moveZ, hasMove) {
     if (playerGrounded) { playerVY = JUMP_SPEED; playerGrounded = false; }
   }
 
-  // --- Gravity + landing ---
-  const support = groundSupportHeight(pos.x, pos.z, feetY);
+  // --- Gravity + landing (all on the FEET) ---
+  const support = groundSupportHeight(pos.x, pos.z, playerFeetY);
   playerVY -= GRAVITY * dt;
-  let newFeetY = feetY + playerVY * dt;
+  let newFeetY = playerFeetY + playerVY * dt;
   if (newFeetY <= support) {
     newFeetY = support;
     playerVY = 0;
@@ -3184,7 +3197,9 @@ function updateVerticalPhysics(local, dt, moveX, moveZ, hasMove) {
   } else {
     playerGrounded = false;
   }
-  pos.y = newFeetY + half;
+  playerFeetY = newFeetY;
+  // Center rides above the feet at the current (possibly crouched) height.
+  pos.y = playerFeetY + currentCapsuleHalf;
 }
 
 // ----------------------------------------------------------------------------
@@ -3223,11 +3238,16 @@ scene.onBeforeRenderObservable.add(() => {
       // Hold left mouse to keep firing (cooldown-limited). This is what makes
       // "hold RMB to aim + hold LMB to fire" stream shots.
       if (pcFireHeld) tryFireProjectile();
-      // Crouch (Shift held) while grounded and not mid-slide: duck the body.
-      pcCrouching = keysDown['shift'] && playerGrounded && !activeDash;
+      // Crouch (Shift held, not mid-slide): ease the capsule down/up. NOT
+      // gated on playerGrounded - the old gate created a feedback loop (the
+      // crouch briefly un-grounded the player, which un-crouched them, which
+      // re-grounded them...). Now feet stay planted (see updateVerticalPhysics)
+      // and the height eases smoothly, so there's nothing to jitter.
+      pcCrouching = keysDown['shift'] && !activeDash;
       if (!activeDash) {
-        currentCapsuleHalf = pcCrouching ? SLIDE_CENTER_Y : CAPSULE_HALF;
-        local.mesh.scaling.y = pcCrouching ? SLIDE_SCALE_Y : 1;
+        const targetHalf = pcCrouching ? SLIDE_CENTER_Y : CAPSULE_HALF;
+        currentCapsuleHalf += (targetHalf - currentCapsuleHalf) * Math.min(1, CROUCH_LERP_SPEED * deltaSeconds);
+        local.mesh.scaling.y = currentCapsuleHalf / CAPSULE_HALF; // 1 standing, 0.5 fully crouched
       }
     } else if (inputType === 'gamepad') {
       const gp = readGamepadState();
@@ -3554,6 +3574,7 @@ function leaveCurrentMode() {
 
   // --- Vertical physics ---
   playerVY = 0;
+  playerFeetY = 0;
   playerGrounded = true;
   jumpQueued = false;
   climbState = null;
