@@ -77,8 +77,11 @@ const CAMERA_LERP_SPEED = 6;
 const CAMERA_ROTATE_LERP_SPEED = 8;
 
 // --- Combat tuning ---
-const PROJECTILE_SPEED = 25;        // world units per second (raised from 15 - snappier shots)
-const PROJECTILE_MAX_DISTANCE = 30; // despawn after traveling this far
+// Bumped for a faster, longer-reaching "real gun" feel across ALL platforms
+// (was 25 / 30). Fast enough that leading a target barely matters at typical
+// arena ranges, and reaches most of the way across the 70u map.
+const PROJECTILE_SPEED = 48;        // world units per second
+const PROJECTILE_MAX_DISTANCE = 55; // despawn after traveling this far
 const HIT_RADIUS = 0.9;             // how close (horizontally) a projectile must get to count as a hit
 // Projectiles now travel in full 3D (they can be aimed up/down), so a hit
 // also needs the shot to be at roughly the target's HEIGHT, not just its
@@ -495,13 +498,15 @@ const obstacles = []; // meshes (for rendering/collision flags)
 // sinking halfway in before stopping.
 const obstacleBounds = [];
 
-function addObstacleBox(name, x, z, width, height, depth) {
+function addObstacleBox(name, x, z, width, height, depth, colorHex) {
   const box = BABYLON.MeshBuilder.CreateBox(name, { width, height, depth }, scene);
   box.position.set(x, height / 2, z);
   box.checkCollisions = true;
 
   const mat = new BABYLON.StandardMaterial(`${name}-mat`, scene);
-  mat.diffuseColor = new BABYLON.Color3(0.42, 0.42, 0.48); // neutral stone gray
+  mat.diffuseColor = colorHex
+    ? BABYLON.Color3.FromHexString(colorHex)
+    : new BABYLON.Color3(0.42, 0.42, 0.48); // neutral stone gray
   mat.specularColor = new BABYLON.Color3(0, 0, 0);
   box.material = mat;
 
@@ -541,6 +546,23 @@ addObstacleBox('obstacle-6', 0, 22, 5, 1.8, 2);
 addObstacleBox('obstacle-7', 0, -22, 5, 1.8, 2);
 addObstacleBox('obstacle-8', 24, 2, 2, 2.6, 5);
 addObstacleBox('obstacle-9', -24, -2, 2, 2.6, 5);
+
+// --- Temporary TEST geometry (parkour + climbing) ---
+// Tinted warm so it reads as scratch test terrain, NOT final map design.
+// Purpose: give Console's parkour and the new climb/jump something varied to
+// exercise - a staircase, a tall climbable wall, a platform to mount, a
+// facing-wall corridor, and a low block to vault. Spaced out, no enclosed
+// pockets. Will be replaced by the real map (see the map-session backlog).
+const TEST_TINT = '#6b5a43';
+addObstacleBox('test-step-0', -4, 14, 2.6, 0.7, 2.6, TEST_TINT); // ascending staircase...
+addObstacleBox('test-step-1', -1, 14, 2.6, 1.3, 2.6, TEST_TINT);
+addObstacleBox('test-step-2',  2, 14, 2.6, 1.9, 2.6, TEST_TINT);
+addObstacleBox('test-step-3',  5, 14, 2.6, 2.5, 2.6, TEST_TINT); // ...up to a 2.5u ledge
+addObstacleBox('test-wall-climb', -8, -11, 3, 2.6, 1.4, TEST_TINT); // tall wall to mantle
+addObstacleBox('test-platform', 6, -12, 6, 1.4, 4, TEST_TINT);      // raised platform to stand/shoot from
+addObstacleBox('test-parkour-a', 18, -6, 1.5, 2.4, 4, TEST_TINT);   // facing-wall pair with an...
+addObstacleBox('test-parkour-b', 18, 6, 1.5, 2.4, 4, TEST_TINT);    // ...open corridor between them
+addObstacleBox('test-low', -18, 11, 4, 1.0, 4, TEST_TINT);          // low block to vault / step onto
 
 // Border walls: thin, moderately tall boxes just inside the ground's
 // edge. Visible (not invisible planes) so the map clearly reads as
