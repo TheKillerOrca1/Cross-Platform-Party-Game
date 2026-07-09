@@ -3,8 +3,9 @@
 // ----------------------------------------------------------------------------
 // This file does five things:
 //   1. Shows a join screen where the player picks a team and how they're
-//      playing (PC, Console, or one of four Mobile variants) - purely for
-//      playtesting different camera/control schemes on any device.
+//      playing: PC, Console, Mobile (the current dual-stick + gesture-pad
+//      design), or one of four older Mobile experiments kept for
+//      comparison - purely for playtesting control schemes on any device.
 //   2. Sets up a Babylon.js 3D scene: a ground plane, a light, a camera
 //      (whose type depends on the chosen mode), and a colored capsule mesh
 //      for every connected player.
@@ -171,6 +172,77 @@ const SWARM_CAM_MAX_RADIUS = 35; // furthest pinch-zoom
 const SWARM_COMMAND_SCATTER = 2.5; // random spread so tapped minions don't perfectly stack
 
 // ----------------------------------------------------------------------------
+// MOBILE MODE (dual-stick + gesture pad) - tuning constants
+// ----------------------------------------------------------------------------
+// This is the CURRENT mobile design direction (see 01_Platform_Playstyles.md,
+// July 9 2026 session): fully manual dual-stick control plus a see-through
+// "dash pad" above the sticks where the player DRAWS their movement. The
+// four older mobile modes are kept around as superseded experiments.
+//
+// ⚠ None of these numbers have been felt on a real phone yet - this build
+// exists precisely to make that playtest possible. Tune freely.
+
+// The bottom strip of the screen belongs to the two sticks (left half =
+// move, right half = aim). Touches above the strip hit the gesture pad
+// (its own element) or nothing.
+const DUAL_STICK_STRIP_FRACTION = 0.35;
+// Right stick: full deflection turns you this fast (radians/second),
+// scaled by the sensitivity slider - same feel family as the legacy
+// turn-stick experiment, but here it's a pure camera/aim stick: releasing
+// it does NOT fire (firing has its own placeholder button).
+const DUAL_TURN_MAX_RATE = 3.0;
+
+// --- Gesture pad: recognizing the drawn stroke ---
+const GESTURE_MIN_STROKE_PX = 30;    // shorter marks are ignored (accidental taps)
+const GESTURE_SMOOTH_WINDOW = 5;     // moving-average window over raw finger points
+const GESTURE_RESAMPLE_POINTS = 28;  // the cleaned-up path is reduced to this many evenly spaced points
+// A stroke whose straight-line displacement is at least this fraction of
+// its total drawn length counts as "straight" (the simple/safe inputs);
+// anything below it is a curve (the expressive free-form inputs).
+const GESTURE_STRAIGHTNESS_MIN = 0.78;
+// How far off screen-vertical a straight stroke may lean and still count
+// as "up" (jump-dash) or "down" (slide-dash). Generous on purpose - this
+// is part of the "tolerance for imprecise starts" the design calls for.
+const GESTURE_VERTICAL_TOLERANCE_DEG = 40;
+
+// --- Turning the drawn shape into a world-space dash path ---
+// Screen-up in the pad = "the way the camera faced when the gesture
+// STARTED" (locked at gesture start, per the design - moving the camera
+// mid-draw does not re-aim the dash). Screen-x = sideways.
+const DASH_WORLD_SCALE = 8;      // world units a full-pad-height stroke maps to
+const DASH_MIN_WORLD_LEN = 3;    // clamp: even a tiny valid stroke dashes a useful distance
+const DASH_MAX_WORLD_LEN = 13;   // clamp: no cross-map teleports
+const DASH_SPEED = 14;           // world units/second along the traced path
+// Hard ceiling on how fast the capsule may chase its path. Normal playback
+// peaks around 1.5x DASH_SPEED (smoothstep easing), safely under this; it
+// only bites when a wall pinned the capsule mid-dash while the path moved
+// on - without the cap, clearing the wall snapped the capsule several
+// units in a single frame (found in testing).
+const DASH_CATCHUP_SPEED = 24;
+const DASH_MIN_DURATION_S = 0.3;
+const DASH_MAX_DURATION_S = 1.0;
+const JUMP_DASH_HEIGHT = 2.2;    // arc peak of the jump-dash
+const FREEFORM_HOP_HEIGHT = 1.0; // curved dashes get a low "carried by wind" hop
+const DASH_COOLDOWN_MS = 250;    // small gap after a dash before the next gesture lands
+const DASH_PATH_LINGER_MS = 600; // how long the glowing world-path line outlives the dash
+
+// --- Wall-swoop (first pass - "detect wall + swipe + impulse", per plan) ---
+// The gesture is a sharp out-and-back "V": swipe toward a nearby wall,
+// then away. The return leg's direction is the direction you swoop.
+const WALL_SWOOP_RANGE = 3.5;        // how close a wall must be (world units)
+const WALL_SWOOP_DISTANCE = 4.5;     // how far the push-off carries you
+const WALL_SWOOP_HEIGHT = 1.4;       // its little hop arc
+const WALL_SWOOP_DURATION_S = 0.42;
+const WALL_SWOOP_MAX_CHAIN = 3;      // design says "chainable 2-3 times pending balance" - 3 for now
+const WALL_SWOOP_FOLD_MIN_DEG = 110; // how sharply the stroke must reverse to read as out-and-back
+// A "V" retraces itself and encloses almost no area; a swooping curve
+// encloses a lot. Comparing enclosed area to stroke length separates the
+// wall-swoop gesture from free-form curves far more reliably than angles
+// alone. (Dimensionless: area / length². A tight V is ~0, a semicircle ~0.16.)
+const WALL_SWOOP_AREA_RATIO_MAX = 0.045;
+const WALL_SWOOP_GROUND_RESET_MS = 400; // grounded this long = chain counter resets
+
+// ----------------------------------------------------------------------------
 // MODE CONFIGURATION
 // ----------------------------------------------------------------------------
 // Everything that varies between the 5 join options boils down to two
@@ -193,7 +265,7 @@ const SWARM_COMMAND_SCATTER = 2.5; // random spread so tapped minions don't perf
 //                            player pans/zooms it freely (Swarm Command)
 //
 // inputType is one of:
-//   'keyboard-mouse' | 'gamepad' | 'touch' | 'touch-swarm'
+//   'keyboard-mouse' | 'gamepad' | 'touch' | 'touch-swarm' | 'touch-dual'
 //
 // Flags:
 //   hasMinions  - this mode spawns a squad of networked minions
@@ -211,6 +283,19 @@ const MODE_CONFIG = {
     // "xbox needs to move its camera with its aiming".
     cameraType: 'third-person-chase',
     inputType: 'gamepad',
+  },
+  mobile: {
+    label: 'Mobile',
+    // The CURRENT mobile design (dual-stick + gesture pad). Third-person
+    // chase deliberately: the whole point of this build is judging whether
+    // the dash follows your drawn shape, and you can only SEE that arc
+    // from behind your character, not through its eyes. (Camera choice
+    // wasn't specified in the design session - judgment call, revisit
+    // once it's been felt on a device.)
+    cameraType: 'third-person-chase',
+    inputType: 'touch-dual',
+    // No minions: the design session replaced the commander-minion concept
+    // with direct character control (see 01_Platform_Playstyles.md).
   },
   'mobile-squad': {
     label: 'Mobile: Squad Mode',
@@ -622,6 +707,12 @@ function addPlayer(id, playerData) {
     }
   }
 
+  // Height: 0.9 = capsule center standing on the ground. Anything above
+  // that means the player is mid-dash (Mobile's gesture dashes are the
+  // first mechanic that leaves the ground).
+  const startY = typeof playerData.y === 'number' ? playerData.y : 0.9;
+  capsule.position.y = startY;
+
   playerAvatars[id] = {
     mesh: capsule,
     nose,
@@ -632,6 +723,7 @@ function addPlayer(id, playerData) {
     // "target" values are where remote players are glide-interpolating
     // toward. For the local player these aren't used for movement.
     targetX: playerData.x,
+    targetY: startY,
     targetZ: playerData.z,
   };
 
@@ -1443,6 +1535,705 @@ canvas.addEventListener('pointerup', onSwarmTouchEnd);
 canvas.addEventListener('pointercancel', onSwarmTouchEnd);
 
 // ----------------------------------------------------------------------------
+// INPUT: Mobile (dual-stick + gesture pad) - the CURRENT mobile design
+// ----------------------------------------------------------------------------
+// Three input surfaces, all usable at the same time (each touch is tracked
+// by its own pointerId, so a thumb on each stick plus a finger drawing in
+// the pad all coexist):
+//
+//   1. LEFT STICK  (bottom-left of screen)  - move, exactly like PC's WASD
+//   2. RIGHT STICK (bottom-right of screen) - turn/aim the camera. Pure
+//      aim: releasing it does NOT fire (unlike the older experiments).
+//      Firing is a separate placeholder button - the design session locked
+//      movement/aim but left the firing input open (see backlog).
+//   3. GESTURE PAD (the see-through panel above the sticks) - draw a shape,
+//      lift your finger, and the dash executes. Recorded-then-executed,
+//      NOT live: nothing moves until you release, and the camera direction
+//      used to interpret the shape is LOCKED at the moment your finger
+//      first touched the pad. That's deliberate: draw, release, snap your
+//      thumb back to the aim stick, and track a target while the dash
+//      plays out.
+//
+// HOW A DRAWN SHAPE BECOMES MOVEMENT
+// The pad is read like a bird's-eye minimap of your immediate surroundings:
+// screen-up = "the way the camera faced when the gesture started",
+// screen-x = sideways. Two special straight strokes are the easy/safe moves
+// (their vertical direction means height, not backward):
+//   - start LOW, drag UP          -> jump-dash  (forward leap arc)
+//   - start HIGH, drag STRAIGHT DOWN -> slide-dash (forward ground slide -
+//     deliberately NOT a backward dash!)
+// Everything curved is free-form: the traced shape itself (smoothed into a
+// clean swoop) becomes the flight path. This is why moving BACKWARD
+// requires drawing a curve that swoops around a side and ends at the
+// bottom - simple inputs stay safe, curvy inputs unlock the full move set,
+// which is the design's intended casual/skilled split.
+//
+// A sharp out-and-back "V" stroke is the separate wall-swoop gesture:
+// swipe toward a nearby wall then away, and you get a push-off impulse in
+// the direction of the return stroke (first-pass implementation).
+
+const gestureZoneEl = document.getElementById('gestureZone');
+const gestureCanvasEl = document.getElementById('gestureCanvas');
+const gestureResultLabelEl = document.getElementById('gestureResultLabel');
+const fireButtonEl = document.getElementById('fireButton');
+
+// Trace/result colors per gesture type (also used for the in-world path line)
+const GESTURE_COLORS = {
+  jump: '#35e0ff',
+  slide: '#ffb037',
+  freeform: '#c07bff',
+  wallswoop: '#ffe25e',
+  reject: '#ff5e5e',
+  draw: '#ffffff',
+};
+
+// --- Dual-stick state ---
+let dualMoveTouchId = null;
+let dualMoveOriginX = 0;
+let dualMoveOriginY = 0;
+let dualMoveX = 0; // -1..1, same convention as the legacy move stick
+let dualMoveZ = 0;
+let dualAimTouchId = null;
+let dualAimOriginX = 0;
+let dualTurnX = 0; // -1..1 horizontal deflection -> turn rate
+let fireHeld = false; // fire button held: the render loop fires on cooldown
+
+// --- Gesture pad state ---
+let gestureCtx = null;       // 2d context for drawing the finger trace
+let gesturePointerId = null; // the one finger currently drawing (if any)
+let gesturePoints = [];      // raw trace, in pad-local pixels
+let gestureStartYaw = 0;     // camera yaw LOCKED at the moment the gesture started
+let gestureFadeTimeoutId = null;
+let gestureResultTimeoutId = null;
+
+// --- Dash state ---
+// The dash currently playing back, or null. Built by executeGesture():
+//   { type, points: [{x,z}...], duration, heightPeak, elapsed, line }
+let activeDash = null;
+let lastDashEndedAt = 0;
+let wallSwoopChain = 0; // consecutive swoops without touching ground
+
+function clamp(value, lo, hi) {
+  return Math.max(lo, Math.min(hi, value));
+}
+
+// --- Dual sticks (canvas touches in the bottom strip of the screen) ---
+// Same floating-stick pattern as the legacy modes: the stick base appears
+// wherever the thumb lands inside its region, which is far more forgiving
+// than demanding a precise hit on a fixed circle.
+function onDualTouchStart(e) {
+  if (!currentMode || MODE_CONFIG[currentMode].inputType !== 'touch-dual') return;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  // Above the stick strip is the gesture pad's territory (its own element
+  // grabs those touches before the canvas ever sees them) or dead space.
+  if (y < rect.height * (1 - DUAL_STICK_STRIP_FRACTION)) return;
+
+  if (isLeftHalf(x) && dualMoveTouchId === null) {
+    dualMoveTouchId = e.pointerId;
+    dualMoveOriginX = x;
+    dualMoveOriginY = y;
+    joystickBaseEl.style.left = `${x - 55}px`;
+    joystickBaseEl.style.top = `${y - 55}px`;
+    joystickBaseEl.style.display = 'block';
+    joystickKnobEl.style.left = '30px';
+    joystickKnobEl.style.top = '30px';
+  } else if (!isLeftHalf(x) && dualAimTouchId === null) {
+    dualAimTouchId = e.pointerId;
+    dualAimOriginX = x;
+    dualTurnX = 0;
+    showAimJoystickAt(x, y, true); // blue "turn stick" look
+  }
+}
+
+function onDualTouchMove(e) {
+  if (!currentMode || MODE_CONFIG[currentMode].inputType !== 'touch-dual') return;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  if (e.pointerId === dualMoveTouchId) {
+    const dx = x - dualMoveOriginX;
+    const dy = y - dualMoveOriginY;
+    const dist = Math.min(Math.hypot(dx, dy), JOYSTICK_MAX_RADIUS);
+    const angle = Math.atan2(dy, dx);
+    const knobX = Math.cos(angle) * dist;
+    const knobY = Math.sin(angle) * dist;
+    joystickKnobEl.style.left = `${30 + knobX}px`;
+    joystickKnobEl.style.top = `${30 + knobY}px`;
+    // Screen-down = walk backward, matching every other stick in this file.
+    dualMoveX = knobX / JOYSTICK_MAX_RADIUS;
+    dualMoveZ = -(knobY / JOYSTICK_MAX_RADIUS);
+  } else if (e.pointerId === dualAimTouchId) {
+    const dx = x - dualAimOriginX;
+    moveAimJoystickKnob(dx, 0); // knob slides horizontally only - it's a yaw-rate stick
+    dualTurnX = clamp(dx / JOYSTICK_MAX_RADIUS, -1, 1);
+    // NOTE: no pitch/vertical aim for now - the map is flat and every
+    // projectile flies level, so up/down aim would be cosmetic. Revisit
+    // when the map gets verticality (see the map-session dependency).
+  }
+}
+
+function onDualTouchEnd(e) {
+  if (e.pointerId === dualMoveTouchId) {
+    dualMoveTouchId = null;
+    dualMoveX = 0;
+    dualMoveZ = 0;
+    joystickBaseEl.style.display = 'none';
+  } else if (e.pointerId === dualAimTouchId) {
+    // Releasing the aim stick does NOTHING but stop turning - deliberately
+    // not a fire trigger (that was the old experiments' scheme).
+    dualAimTouchId = null;
+    dualTurnX = 0;
+    hideAimJoystick();
+  }
+}
+
+canvas.addEventListener('pointerdown', onDualTouchStart);
+canvas.addEventListener('pointermove', onDualTouchMove);
+canvas.addEventListener('pointerup', onDualTouchEnd);
+canvas.addEventListener('pointercancel', onDualTouchEnd);
+
+// --- Placeholder fire button (see backlog: mobile firing input undecided) ---
+// Hold to auto-fire at the normal cooldown rate; the render loop does the
+// repeating so the rate limit lives in exactly one place (tryFireProjectile).
+fireButtonEl.addEventListener('pointerdown', (e) => {
+  e.preventDefault(); // stop the browser synthesizing a duplicate mouse click
+  fireHeld = true;
+  tryFireProjectile();
+});
+['pointerup', 'pointercancel', 'pointerleave'].forEach((evt) => {
+  fireButtonEl.addEventListener(evt, () => { fireHeld = false; });
+});
+
+// --- Gesture pad canvas (the visible finger trace) ---
+// The pad's <canvas> is resized to its on-screen pixels whenever the pad is
+// shown (and on window resizes) so traces are crisp on high-DPI phones.
+function syncGestureCanvasSize() {
+  const rect = gestureZoneEl.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  gestureCanvasEl.width = Math.max(1, Math.round(rect.width * dpr));
+  gestureCanvasEl.height = Math.max(1, Math.round(rect.height * dpr));
+  gestureCtx = gestureCanvasEl.getContext('2d');
+  gestureCtx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS pixels
+}
+window.addEventListener('resize', () => {
+  if (gestureZoneEl.style.display === 'block') syncGestureCanvasSize();
+});
+
+function clearGestureCanvas() {
+  if (!gestureCtx) return;
+  gestureCtx.save();
+  gestureCtx.setTransform(1, 0, 0, 1, 0, 0);
+  gestureCtx.clearRect(0, 0, gestureCanvasEl.width, gestureCanvasEl.height);
+  gestureCtx.restore();
+}
+
+function drawPadTrace(points, colorHex) {
+  clearGestureCanvas();
+  if (!gestureCtx || points.length < 2) return;
+  gestureCtx.strokeStyle = colorHex;
+  gestureCtx.lineWidth = 3;
+  gestureCtx.lineCap = 'round';
+  gestureCtx.lineJoin = 'round';
+  gestureCtx.beginPath();
+  gestureCtx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) gestureCtx.lineTo(points[i].x, points[i].y);
+  gestureCtx.stroke();
+}
+
+// Briefly shows the CLEANED-UP stroke in its result color, so the player
+// sees what the game actually read from their finger, then fades it.
+function flashPadTrace(points, colorHex) {
+  if (points && points.length >= 2) drawPadTrace(points, colorHex);
+  if (gestureFadeTimeoutId) clearTimeout(gestureFadeTimeoutId);
+  gestureFadeTimeoutId = setTimeout(() => {
+    clearGestureCanvas();
+    gestureFadeTimeoutId = null;
+  }, 600);
+}
+
+function showGestureResult(text, colorHex) {
+  gestureResultLabelEl.textContent = text;
+  gestureResultLabelEl.style.color = colorHex || '#fff';
+  if (gestureResultTimeoutId) clearTimeout(gestureResultTimeoutId);
+  gestureResultTimeoutId = setTimeout(() => {
+    gestureResultLabelEl.textContent = '';
+    gestureResultTimeoutId = null;
+  }, 900);
+}
+
+// --- Small geometry helpers for stroke analysis ---
+function polylineLength(points) {
+  let len = 0;
+  for (let i = 1; i < points.length; i++) {
+    len += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+  return len;
+}
+
+// Moving-average smoothing: each point becomes the average of its
+// neighbors. Kills the pixel-level jitter of a real finger without
+// changing the stroke's overall shape.
+function smoothPolyline(points, windowSize) {
+  if (points.length <= 2) return points.slice();
+  const half = Math.floor(windowSize / 2);
+  return points.map((_, i) => {
+    let sx = 0, sy = 0, n = 0;
+    for (let j = Math.max(0, i - half); j <= Math.min(points.length - 1, i + half); j++) {
+      sx += points[j].x;
+      sy += points[j].y;
+      n++;
+    }
+    return { x: sx / n, y: sy / n };
+  });
+}
+
+// Re-walks the stroke and lays down `count` points at perfectly even
+// spacing along it. Fingers don't move at constant speed (points bunch up
+// where you slow down), and evenly spaced points are what lets the dash
+// play back at a steady pace along the drawn shape.
+function resamplePolyline(points, count) {
+  const total = polylineLength(points);
+  if (total === 0 || points.length < 2) return points.slice();
+  const step = total / (count - 1);
+  const out = [points[0]];
+  let acc = 0;
+  let i = 1;
+  let prev = points[0];
+  while (out.length < count - 1 && i < points.length) {
+    const seg = Math.hypot(points[i].x - prev.x, points[i].y - prev.y);
+    if (seg === 0) { i++; continue; }
+    if (acc + seg >= step) {
+      const f = (step - acc) / seg;
+      const nx = prev.x + (points[i].x - prev.x) * f;
+      const ny = prev.y + (points[i].y - prev.y) * f;
+      out.push({ x: nx, y: ny });
+      prev = { x: nx, y: ny };
+      acc = 0;
+    } else {
+      acc += seg;
+      prev = points[i];
+      i++;
+    }
+  }
+  while (out.length < count) out.push(points[points.length - 1]);
+  return out;
+}
+
+// Signed area enclosed by the stroke (shoelace formula). Used to tell a
+// wall-swoop "V" (retraces itself, ~zero area) from a swooping curve
+// (encloses lots of area) - see WALL_SWOOP_AREA_RATIO_MAX.
+function shoelaceArea(points) {
+  let a = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const q = points[(i + 1) % points.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return a / 2;
+}
+
+// Maps a pad-space vector to a world-space one. Screen-up = the camera's
+// forward AT GESTURE START (the yaw passed in), screen-right = its right.
+// (rotationY convention from the rest of this file: forward = (sin yaw,
+// cos yaw), so right = (cos yaw, -sin yaw).)
+function gestureVecToWorld(dxPx, dyPx, yaw, unitsPerPx) {
+  const upPx = -dyPx; // screen y grows downward; flip so "up" is positive
+  const fX = Math.sin(yaw), fZ = Math.cos(yaw);
+  const rX = Math.cos(yaw), rZ = -Math.sin(yaw);
+  return {
+    x: (dxPx * rX + upPx * fX) * unitsPerPx,
+    z: (dxPx * rZ + upPx * fZ) * unitsPerPx,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Gesture classification: raw finger trace -> which move was drawn?
+// ---------------------------------------------------------------------------
+// Returns one of:
+//   { type: 'reject', reason }                       - nothing usable
+//   { type: 'wallswoop', outX, outY, backX, backY, pts }
+//   { type: 'jump' | 'slide', netX, netY, pathLen, pts }
+//   { type: 'freeform', pts, pathLen }
+function classifyGesture(rawPoints, zoneHeightPx) {
+  if (rawPoints.length < 2) return { type: 'reject', reason: 'draw a bigger shape' };
+
+  const smoothed = smoothPolyline(rawPoints, GESTURE_SMOOTH_WINDOW);
+  const pathLen = polylineLength(smoothed);
+  if (pathLen < GESTURE_MIN_STROKE_PX) return { type: 'reject', reason: 'draw a bigger shape' };
+
+  const pts = resamplePolyline(smoothed, GESTURE_RESAMPLE_POINTS);
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const netX = last.x - first.x;
+  const netY = last.y - first.y;
+  const straightness = Math.hypot(netX, netY) / pathLen;
+  // Where the stroke STARTED: 0 = bottom of the pad, 1 = top.
+  const startHeight = 1 - first.y / zoneHeightPx;
+
+  // --- Wall-swoop check first: a sharp out-and-back "V" ---
+  // Apex = the point of the stroke farthest from where it began.
+  let apexIdx = 0;
+  let apexDistSq = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dx = pts[i].x - first.x;
+    const dy = pts[i].y - first.y;
+    const d = dx * dx + dy * dy;
+    if (d > apexDistSq) { apexDistSq = d; apexIdx = i; }
+  }
+  const apex = pts[apexIdx];
+  const outX = apex.x - first.x, outY = apex.y - first.y;
+  const backX = last.x - apex.x, backY = last.y - apex.y;
+  const outLen = Math.hypot(outX, outY);
+  const backLen = Math.hypot(backX, backY);
+  if (outLen > 1 && backLen >= outLen * 0.4) {
+    const dot = (outX * backX + outY * backY) / (outLen * backLen);
+    const foldDeg = (Math.acos(clamp(dot, -1, 1)) * 180) / Math.PI; // 180° = perfect retrace
+    const areaRatio = Math.abs(shoelaceArea(pts)) / (pathLen * pathLen);
+    if (foldDeg >= WALL_SWOOP_FOLD_MIN_DEG && areaRatio <= WALL_SWOOP_AREA_RATIO_MAX) {
+      return { type: 'wallswoop', outX, outY, backX, backY, pts };
+    }
+  }
+
+  // --- Straight strokes: the simple/safe moves ---
+  // Direction is the primary signal; the start-position bands are generous
+  // on purpose ("tolerance for imprecise starting points" in the design).
+  if (straightness >= GESTURE_STRAIGHTNESS_MIN) {
+    // Angle off screen-up: 0° = straight up, ±180° = straight down.
+    const angleFromUp = (Math.atan2(netX, -netY) * 180) / Math.PI;
+    if (Math.abs(angleFromUp) <= GESTURE_VERTICAL_TOLERANCE_DEG && startHeight <= 0.8) {
+      return { type: 'jump', netX, netY, pathLen, pts };
+    }
+    if (Math.abs(angleFromUp) >= 180 - GESTURE_VERTICAL_TOLERANCE_DEG && startHeight >= 0.2) {
+      return { type: 'slide', netX, netY, pathLen, pts };
+    }
+    // A straight sideways stroke isn't in the spec - fall through and let
+    // it be a free-form path (reads as a lateral dodge, which feels like
+    // the natural meaning). Judgment call, revisit after device testing.
+  }
+
+  // --- Everything else: the drawn shape IS the flight path ---
+  return { type: 'freeform', pts, pathLen };
+}
+
+// Is there wall/cover within `range` units in this direction? Marches a
+// point outward in small steps and checks it against every obstacle's
+// bounds (the same precomputed AABBs projectiles use - border walls are in
+// that list too). Crude but plenty for "am I next to a wall?".
+function findWallInDirection(x, z, dirX, dirZ, range) {
+  const margin = 0.5; // roughly the capsule's radius
+  for (let d = 0.4; d <= range; d += 0.3) {
+    const px = x + dirX * d;
+    const pz = z + dirZ * d;
+    for (const b of obstacleBounds) {
+      if (px >= b.minX - margin && px <= b.maxX + margin &&
+          pz >= b.minZ - margin && pz <= b.maxZ + margin) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// If (x,z) ended up inside an obstacle's footprint (possible when a dash
+// arcs OVER a box and lands on/in it), slide the point out along the
+// dash's exit direction - try forward first, then backward.
+function pushOutOfObstacles(x, z, dirX, dirZ) {
+  const margin = 0.45;
+  const inside = (px, pz) => obstacleBounds.some((b) =>
+    px >= b.minX - margin && px <= b.maxX + margin &&
+    pz >= b.minZ - margin && pz <= b.maxZ + margin);
+  if (!inside(x, z)) return { x, z };
+  for (const sign of [1, -1]) {
+    for (let step = 0.3; step <= 3; step += 0.3) {
+      const nx = x + dirX * step * sign;
+      const nz = z + dirZ * step * sign;
+      if (!inside(nx, nz)) return { x: nx, z: nz };
+    }
+  }
+  return { x, z }; // stuck against something odd - collisions kept us out of the solid core anyway
+}
+
+// Evenly spaced waypoints along a straight line - used by the canned moves
+// (jump-dash, slide-dash, wall-swoop) so every dash type feeds the same
+// playback code as the free-form ones.
+function straightWaypoints(x, z, dirX, dirZ, distance) {
+  const points = [];
+  for (let i = 0; i < GESTURE_RESAMPLE_POINTS; i++) {
+    const d = (distance * i) / (GESTURE_RESAMPLE_POINTS - 1);
+    points.push({ x: x + dirX * d, z: z + dirZ * d });
+  }
+  return points;
+}
+
+// ---------------------------------------------------------------------------
+// Dash playback
+// ---------------------------------------------------------------------------
+// Kicks off a dash: draws its full path as a glowing line in the WORLD
+// (this is the "the dash follows your drawn shape" proof, visible from the
+// chase camera) and hands the dash to the render loop to step each frame.
+function startDash(spec) {
+  const linePoints = spec.points.map((p, i) => {
+    const s = i / (spec.points.length - 1);
+    return new BABYLON.Vector3(p.x, 0.9 + Math.sin(Math.PI * s) * spec.heightPeak, p.z);
+  });
+  const line = BABYLON.MeshBuilder.CreateLines(`dashpath-${Date.now()}`, { points: linePoints }, scene);
+  line.color = BABYLON.Color3.FromHexString(GESTURE_COLORS[spec.type]);
+  line.isPickable = false;
+
+  activeDash = { ...spec, elapsed: 0, line };
+  showGestureResult(spec.label, GESTURE_COLORS[spec.type]);
+  window.__mobileDebug.lastGesture = { type: spec.type, at: performance.now() };
+}
+
+// Advances the active dash one frame. Called from the render loop INSTEAD
+// of normal stick movement while a dash is playing (the aim stick stays
+// live the whole time - that's the point of recorded-then-executed).
+function stepActiveDash(deltaSeconds, local) {
+  const dash = activeDash;
+  dash.elapsed += deltaSeconds;
+  const t = Math.min(1, dash.elapsed / dash.duration);
+  // Smoothstep easing: gentle speed-up and slow-down, so the dash reads as
+  // "a gust of wind carried you", not a teleport with frames in between.
+  const s = t * t * (3 - 2 * t);
+
+  // Where along the waypoint list should we be? (Waypoints are evenly
+  // spaced, so this is just a fractional index.)
+  const fIdx = s * (dash.points.length - 1);
+  const i0 = Math.floor(fIdx);
+  const i1 = Math.min(dash.points.length - 1, i0 + 1);
+  const frac = fIdx - i0;
+  let wantX = dash.points[i0].x + (dash.points[i1].x - dash.points[i0].x) * frac;
+  let wantZ = dash.points[i0].z + (dash.points[i1].z - dash.points[i0].z) * frac;
+  // Never dash out of the map.
+  wantX = clamp(wantX, -(MAP_HALF - 1), MAP_HALF - 1);
+  wantZ = clamp(wantZ, -(MAP_HALF - 1), MAP_HALF - 1);
+  // Height: a sine arc peaking mid-dash (zero for slides).
+  const wantY = 0.9 + Math.sin(Math.PI * s) * dash.heightPeak;
+
+  // moveWithCollisions (not a position teleport) so cover boxes and the
+  // border still block/deflect a dash instead of being clipped through.
+  let stepX = wantX - local.mesh.position.x;
+  let stepY = wantY - local.mesh.position.y;
+  let stepZ = wantZ - local.mesh.position.z;
+  const stepLen = Math.hypot(stepX, stepY, stepZ);
+  const maxStep = DASH_CATCHUP_SPEED * deltaSeconds;
+  if (stepLen > maxStep && stepLen > 0) {
+    const k = maxStep / stepLen;
+    stepX *= k;
+    stepY *= k;
+    stepZ *= k;
+  }
+  local.mesh.moveWithCollisions(new BABYLON.Vector3(stepX, stepY, stepZ));
+
+  if (t >= 1) endActiveDash(local);
+}
+
+function endActiveDash(local) {
+  const dash = activeDash;
+  activeDash = null;
+  lastDashEndedAt = performance.now();
+
+  // Land cleanly: back on the ground, nudged out of any obstacle footprint
+  // the arc happened to end on top of.
+  const n = dash.points.length;
+  let exitX = dash.points[n - 1].x - dash.points[n - 2].x;
+  let exitZ = dash.points[n - 1].z - dash.points[n - 2].z;
+  const exitLen = Math.hypot(exitX, exitZ);
+  if (exitLen > 1e-6) { exitX /= exitLen; exitZ /= exitLen; }
+  else { exitX = Math.sin(local.mesh.rotation.y); exitZ = Math.cos(local.mesh.rotation.y); }
+  const settled = pushOutOfObstacles(local.mesh.position.x, local.mesh.position.z, exitX, exitZ);
+  local.mesh.position.x = settled.x;
+  local.mesh.position.z = settled.z;
+  local.mesh.position.y = 0.9;
+
+  // The path line lingers briefly so you can compare "what I drew" with
+  // "where I went", then cleans itself up.
+  if (dash.line) {
+    const line = dash.line;
+    setTimeout(() => { if (!line.isDisposed()) line.dispose(); }, DASH_PATH_LINGER_MS);
+  }
+}
+
+// Used by mode teardown - kill an in-flight dash without the landing logic.
+function cancelActiveDash() {
+  if (!activeDash) return;
+  if (activeDash.line && !activeDash.line.isDisposed()) activeDash.line.dispose();
+  activeDash = null;
+}
+
+// ---------------------------------------------------------------------------
+// Turning a classified gesture into an actual dash
+// ---------------------------------------------------------------------------
+function executeGesture(cls, local) {
+  const rect = gestureZoneEl.getBoundingClientRect();
+  const unitsPerPx = DASH_WORLD_SCALE / Math.max(1, rect.height);
+  const yaw = gestureStartYaw; // locked at gesture start - NOT the current camera
+  const px = local.mesh.position.x;
+  const pz = local.mesh.position.z;
+  const now = performance.now();
+
+  const rejectWith = (reason) => {
+    showGestureResult(reason, GESTURE_COLORS.reject);
+    flashPadTrace(cls.pts || null, GESTURE_COLORS.reject);
+    window.__mobileDebug.lastGesture = { type: 'reject', reason, at: now };
+  };
+
+  if (cls.type === 'reject') return rejectWith(cls.reason);
+  if (now - lastDashEndedAt < DASH_COOLDOWN_MS) return rejectWith('recovering...');
+
+  if (cls.type === 'wallswoop') {
+    // Chain bookkeeping: grounded long enough resets the counter.
+    if (now - lastDashEndedAt > WALL_SWOOP_GROUND_RESET_MS) wallSwoopChain = 0;
+    if (wallSwoopChain >= WALL_SWOOP_MAX_CHAIN) return rejectWith('touch ground first!');
+
+    // The OUT stroke says where the wall is; the BACK stroke says where
+    // you want to be flung. Both resolved against the gesture-start yaw.
+    const outWorld = gestureVecToWorld(cls.outX, cls.outY, yaw, 1);
+    const outLen = Math.hypot(outWorld.x, outWorld.z) || 1;
+    if (!findWallInDirection(px, pz, outWorld.x / outLen, outWorld.z / outLen, WALL_SWOOP_RANGE)) {
+      return rejectWith('no wall nearby');
+    }
+    const backWorld = gestureVecToWorld(cls.backX, cls.backY, yaw, 1);
+    const backLen = Math.hypot(backWorld.x, backWorld.z) || 1;
+    wallSwoopChain++;
+    flashPadTrace(cls.pts, GESTURE_COLORS.wallswoop);
+    startDash({
+      type: 'wallswoop',
+      points: straightWaypoints(px, pz, backWorld.x / backLen, backWorld.z / backLen, WALL_SWOOP_DISTANCE),
+      duration: WALL_SWOOP_DURATION_S,
+      heightPeak: WALL_SWOOP_HEIGHT,
+      label: `wall swoop! (${wallSwoopChain}/${WALL_SWOOP_MAX_CHAIN})`,
+    });
+    return;
+  }
+
+  if (cls.type === 'jump' || cls.type === 'slide') {
+    // Jump: the stroke's own (up-ish) direction maps straight to world -
+    // up = forward, so a slight lean steers the leap.
+    // Slide: the design is explicit that straight-down is a FORWARD slide,
+    // so the down-stroke's magnitude is flipped into forward motion
+    // (passing -|netY| makes gestureVecToWorld's "up" positive) while any
+    // lateral lean still steers, same as the jump.
+    const v = cls.type === 'jump'
+      ? gestureVecToWorld(cls.netX, cls.netY, yaw, 1)
+      : gestureVecToWorld(cls.netX, -Math.abs(cls.netY), yaw, 1);
+    const vLen = Math.hypot(v.x, v.z) || 1;
+    const dist = clamp(cls.pathLen * unitsPerPx, DASH_MIN_WORLD_LEN, DASH_MAX_WORLD_LEN);
+    flashPadTrace(cls.pts, GESTURE_COLORS[cls.type]);
+    startDash({
+      type: cls.type,
+      points: straightWaypoints(px, pz, v.x / vLen, v.z / vLen, dist),
+      duration: clamp(dist / DASH_SPEED, DASH_MIN_DURATION_S, DASH_MAX_DURATION_S),
+      heightPeak: cls.type === 'jump' ? JUMP_DASH_HEIGHT : 0,
+      label: cls.type === 'jump' ? 'jump-dash!' : 'slide-dash!',
+    });
+    return;
+  }
+
+  // Free-form: every resampled point of the drawn shape becomes a world
+  // waypoint (relative to where the stroke began), so the character flies
+  // the actual curve - including curves that end up BEHIND the start,
+  // which is the designed way to dash backward.
+  const origin = cls.pts[0];
+  const offsets = cls.pts.map((p) => gestureVecToWorld(p.x - origin.x, p.y - origin.y, yaw, unitsPerPx));
+  let worldLen = 0;
+  for (let i = 1; i < offsets.length; i++) {
+    worldLen += Math.hypot(offsets[i].x - offsets[i - 1].x, offsets[i].z - offsets[i - 1].z);
+  }
+  if (worldLen < 0.2) return rejectWith('draw a bigger shape');
+  let scale = 1;
+  if (worldLen > DASH_MAX_WORLD_LEN) scale = DASH_MAX_WORLD_LEN / worldLen;
+  else if (worldLen < DASH_MIN_WORLD_LEN) scale = DASH_MIN_WORLD_LEN / worldLen;
+  flashPadTrace(cls.pts, GESTURE_COLORS.freeform);
+  startDash({
+    type: 'freeform',
+    points: offsets.map((o) => ({ x: px + o.x * scale, z: pz + o.z * scale })),
+    duration: clamp((worldLen * scale) / DASH_SPEED, DASH_MIN_DURATION_S, DASH_MAX_DURATION_S),
+    heightPeak: FREEFORM_HOP_HEIGHT, // low "carried by the wind" hop; the shape lives in the ground plane
+    label: 'swoop dash!',
+  });
+}
+
+// --- Gesture pad pointer handlers ---
+function zoneLocalPoint(e) {
+  const rect = gestureZoneEl.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+gestureZoneEl.addEventListener('pointerdown', (e) => {
+  if (!currentMode || MODE_CONFIG[currentMode].inputType !== 'touch-dual') return;
+  if (gesturePointerId !== null) return; // one drawing finger at a time
+  const local = playerAvatars[localPlayerId];
+  if (!local) return;
+  if (activeDash) {
+    showGestureResult('still dashing...', GESTURE_COLORS.reject);
+    return;
+  }
+  gesturePointerId = e.pointerId;
+  // Capture the pointer so the trace survives the finger drifting outside
+  // the pad's edges mid-shape (more of the design's tolerance). Synthetic
+  // pointers (automated tests) can't be captured - that's fine.
+  try { gestureZoneEl.setPointerCapture(e.pointerId); } catch (_) {}
+  gestureStartYaw = local.mesh.rotation.y; // <-- the camera lock, right here
+  if (gestureFadeTimeoutId) { clearTimeout(gestureFadeTimeoutId); gestureFadeTimeoutId = null; }
+  gesturePoints = [zoneLocalPoint(e)];
+  drawPadTrace(gesturePoints, GESTURE_COLORS.draw);
+});
+
+gestureZoneEl.addEventListener('pointermove', (e) => {
+  if (e.pointerId !== gesturePointerId) return;
+  const p = zoneLocalPoint(e);
+  const prev = gesturePoints[gesturePoints.length - 1];
+  if (Math.hypot(p.x - prev.x, p.y - prev.y) < 2) return; // skip micro-jitter
+  gesturePoints.push(p);
+  drawPadTrace(gesturePoints, GESTURE_COLORS.draw);
+});
+
+gestureZoneEl.addEventListener('pointerup', (e) => {
+  if (e.pointerId !== gesturePointerId) return;
+  gesturePointerId = null;
+  const rect = gestureZoneEl.getBoundingClientRect();
+  const points = gesturePoints;
+  gesturePoints = [];
+  const local = playerAvatars[localPlayerId];
+  if (!local) { clearGestureCanvas(); return; }
+  // THE moment the whole mechanic revolves around: finger up -> classify
+  // the recorded shape -> play it back as one motion.
+  executeGesture(classifyGesture(points, Math.max(1, rect.height)), local);
+});
+
+gestureZoneEl.addEventListener('pointercancel', (e) => {
+  if (e.pointerId !== gesturePointerId) return;
+  // The browser stole the pointer (notification shade, etc.) - abort quietly.
+  gesturePointerId = null;
+  gesturePoints = [];
+  clearGestureCanvas();
+});
+
+// --- Debug/testing hook ---
+// Lets automated checks (and curious humans in devtools) read the control
+// state without poking at internals. Not used by gameplay.
+window.__mobileDebug = {
+  lastGesture: null,
+  get pos() {
+    const a = playerAvatars[localPlayerId];
+    return a ? {
+      x: a.mesh.position.x, y: a.mesh.position.y, z: a.mesh.position.z,
+      yaw: a.mesh.rotation.y,
+    } : null;
+  },
+  get dash() {
+    return activeDash
+      ? { type: activeDash.type, elapsed: activeDash.elapsed, duration: activeDash.duration }
+      : null;
+  },
+  get wallSwoopChain() { return wallSwoopChain; },
+};
+
+// ----------------------------------------------------------------------------
 // NETWORKING (Socket.io) - connected once a mode is chosen, in startGame()
 // ----------------------------------------------------------------------------
 let socket = null;
@@ -1510,6 +2301,7 @@ function connectToServer() {
     const avatar = playerAvatars[data.id];
     if (!avatar) return;
     avatar.targetX = data.x;
+    avatar.targetY = typeof data.y === 'number' ? data.y : 0.9; // dash height (0.9 = grounded)
     avatar.targetZ = data.z;
     avatar.mesh.rotation.y = data.rotationY;
   });
@@ -1628,6 +2420,7 @@ function connectToServer() {
 // Only send an update to the server when our position actually changed,
 // and no more often than NETWORK_SEND_INTERVAL_MS.
 let lastSentX = null;
+let lastSentY = null;
 let lastSentZ = null;
 let lastSentRotation = null;
 let msSinceLastSend = 0;
@@ -1640,16 +2433,17 @@ function maybeSendPositionToServer(deltaMs) {
   const local = playerAvatars[localPlayerId];
   if (!local) return;
 
-  const { x, z } = local.mesh.position;
+  const { x, y, z } = local.mesh.position;
   const rotationY = local.mesh.rotation.y;
 
-  const moved = x !== lastSentX || z !== lastSentZ || rotationY !== lastSentRotation;
+  const moved = x !== lastSentX || y !== lastSentY || z !== lastSentZ || rotationY !== lastSentRotation;
   if (!moved) return;
 
   lastSentX = x;
+  lastSentY = y;
   lastSentZ = z;
   lastSentRotation = rotationY;
-  socket.emit('move', { x, z, rotationY });
+  socket.emit('move', { x, y, z, rotationY });
 }
 
 // ----------------------------------------------------------------------------
@@ -1713,11 +2507,14 @@ function tryFireProjectile() {
 
   // Spawn slightly in front of the player (at the nose) so the
   // projectile doesn't visually start out inside their own capsule.
+  // Height rides with the capsule (0.9 + 0.1 = the old fixed 1.0 while
+  // grounded) so shots fired mid-dash appear at the player, not at their
+  // feet's shadow. Hit checks are 2D (x/z), so height stays cosmetic.
   const spawnOffset = 0.7;
   const shotData = {
     ownerId: localPlayerId,
     x: local.mesh.position.x + dirX * spawnOffset,
-    y: 1.0,
+    y: local.mesh.position.y + 0.1,
     z: local.mesh.position.z + dirZ * spawnOffset,
     dirX,
     dirZ,
@@ -1908,6 +2705,12 @@ scene.onBeforeRenderObservable.add(() => {
     } else if (inputType === 'touch') {
       moveX = touchMoveX;
       moveZ = touchMoveZ;
+    } else if (inputType === 'touch-dual') {
+      moveX = dualMoveX;
+      moveZ = dualMoveZ;
+      // Hold-to-autofire on the placeholder fire button; the cooldown
+      // inside tryFireProjectile is what actually limits the rate.
+      if (fireHeld) tryFireProjectile();
     }
 
     // Movement space depends on the camera:
@@ -1918,7 +2721,13 @@ scene.onBeforeRenderObservable.add(() => {
     //   - Fixed-angle cameras (top-down Squad) keep world-space compass
     //     movement: the screen never rotates, so up-on-the-stick = up-on-
     //     the-screen already holds without any transform.
-    if (moveX !== 0 || moveZ !== 0) {
+    if (activeDash && inputType === 'touch-dual') {
+      // A recorded dash is playing back: it owns movement this frame.
+      // Stick movement is ignored until it lands, but aiming (below) and
+      // firing stay live - being able to track a target WHILE the dash
+      // animates is the whole point of recorded-then-executed gestures.
+      stepActiveDash(deltaSeconds, local);
+    } else if (moveX !== 0 || moveZ !== 0) {
       const length = Math.sqrt(moveX * moveX + moveZ * moveZ);
       const normX = moveX / length;
       const normZ = moveZ / length;
@@ -1950,6 +2759,12 @@ scene.onBeforeRenderObservable.add(() => {
       local.mesh.rotation.y = pcAimYaw;
     } else if (inputType === 'gamepad') {
       local.mesh.rotation.y = gamepadAimYaw;
+    } else if (inputType === 'touch-dual') {
+      // Right stick: horizontal deflection = turn RATE, integrated into
+      // yaw each frame (push further = turn faster). Sensitivity slider
+      // applies, same as every other look input. Works mid-dash too.
+      touchAimYaw += dualTurnX * DUAL_TURN_MAX_RATE * sensitivityMultiplier * deltaSeconds;
+      local.mesh.rotation.y = touchAimYaw;
     } else if (inputType === 'touch') {
       if (currentMode === 'mobile-squad') {
         // Squad's facing is driven ONLY by the aim stick's touch handler -
@@ -2016,6 +2831,7 @@ scene.onBeforeRenderObservable.add(() => {
     if (id === localPlayerId) return;
     const lerpFactor = Math.min(1, REMOTE_LERP_SPEED * deltaSeconds);
     avatar.mesh.position.x += (avatar.targetX - avatar.mesh.position.x) * lerpFactor;
+    avatar.mesh.position.y += (avatar.targetY - avatar.mesh.position.y) * lerpFactor; // dash arcs
     avatar.mesh.position.z += (avatar.targetZ - avatar.mesh.position.z) * lerpFactor;
   });
 
@@ -2118,10 +2934,29 @@ function leaveCurrentMode() {
   turnJoystickX = 0;
   gamepadFireWasHeld = false;
 
+  // --- Mobile dual-stick / gesture-pad state ---
+  dualMoveTouchId = null;
+  dualMoveX = 0;
+  dualMoveZ = 0;
+  dualAimTouchId = null;
+  dualTurnX = 0;
+  fireHeld = false;
+  gesturePointerId = null;
+  gesturePoints = [];
+  cancelActiveDash();
+  wallSwoopChain = 0;
+  lastDashEndedAt = 0;
+  if (gestureFadeTimeoutId) { clearTimeout(gestureFadeTimeoutId); gestureFadeTimeoutId = null; }
+  if (gestureResultTimeoutId) { clearTimeout(gestureResultTimeoutId); gestureResultTimeoutId = null; }
+  clearGestureCanvas();
+  gestureResultLabelEl.textContent = '';
+
   // --- Touch UI + per-mode HUD elements ---
   joystickBaseEl.style.display = 'none';
   hideAimJoystick();
   touchHintEl.style.display = 'none';
+  gestureZoneEl.style.display = 'none';
+  fireButtonEl.style.display = 'none';
   document.getElementById('crosshair').style.display = 'none';
   document.getElementById('hudHealthBar').style.display = 'none';
   document.getElementById('inGameMenu').style.display = 'none';
@@ -2129,6 +2964,7 @@ function leaveCurrentMode() {
 
   // --- Network send throttle ---
   lastSentX = null;
+  lastSentY = null;
   lastSentZ = null;
   lastSentRotation = null;
   msSinceLastSend = 0;
@@ -2191,7 +3027,15 @@ function startGame(mode) {
 
   document.getElementById('joinScreen').style.display = 'none';
   respawnCountdownEl.style.display = 'none';
-  if (MODE_CONFIG[mode].inputType === 'touch') {
+  if (MODE_CONFIG[mode].inputType === 'touch-dual') {
+    // The current mobile design: both sticks + the gesture pad + the
+    // placeholder fire button all come up together.
+    touchHintEl.innerHTML = 'left: move &nbsp;|&nbsp; right: aim &nbsp;|&nbsp; &#128293;: fire<br/>draw a shape in the pad to dash';
+    touchHintEl.style.display = 'block';
+    gestureZoneEl.style.display = 'block';
+    fireButtonEl.style.display = 'block';
+    syncGestureCanvasSize(); // the pad only has a real size once visible
+  } else if (MODE_CONFIG[mode].inputType === 'touch') {
     if (mode === 'mobile-squad') {
       touchHintEl.innerHTML = 'right stick: aim<br/>release to fire';
     } else if (MOBILE_TURN_SCHEME === 'turn-joystick') {
@@ -2227,7 +3071,8 @@ function startGame(mode) {
   // detecting - this class just scopes it to mobile modes so a narrow
   // desktop window doesn't get nagged. screen.orientation.lock is a
   // best-effort bonus where supported (notably NOT iOS Safari).
-  if (MODE_CONFIG[mode].inputType === 'touch' || MODE_CONFIG[mode].inputType === 'touch-swarm') {
+  // startsWith covers all three touch flavors: touch, touch-swarm, touch-dual.
+  if (MODE_CONFIG[mode].inputType.startsWith('touch')) {
     document.getElementById('orientationLockOverlay').classList.add('mobile-active');
     try {
       if (screen.orientation && screen.orientation.lock) {
@@ -2253,6 +3098,19 @@ document.querySelectorAll('.join-btn').forEach((btn) => {
     startGame(btn.dataset.mode);
   });
 });
+
+// On an actual touch device, spotlight the Mobile (dual-stick) option -
+// it's the current design direction and the one built for that hardware.
+// Desktop testers can still pick it freely (all its inputs are pointer
+// events, so a mouse - or DevTools touch emulation - drives it fine).
+if ('ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0) {
+  const mobileBtn = document.querySelector('.join-btn[data-mode="mobile"]');
+  if (mobileBtn) {
+    mobileBtn.classList.add('suggested');
+    const sub = mobileBtn.querySelector('.sub');
+    if (sub) sub.textContent += ' — suggested for this device';
+  }
+}
 
 // Team picker: highlights the chosen button and remembers the choice for
 // the next connection (it's sent in the socket handshake, so it applies

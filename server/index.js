@@ -35,7 +35,11 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // ----------------------------------------------------------------------------
 // The server is the "source of truth" for where every player is, and now
 // also for combat: health and alive/dead state. Each entry looks like:
-//   { x, z, rotationY, color, health, alive }
+//   { x, y, z, rotationY, color, health, alive }
+// (y was added along with the Mobile mode's gesture dashes - the first
+// mechanic that lifts a player off the ground - so everyone can see a
+// dashing player arc through the air. It's the capsule CENTER's height:
+// 0.9 when standing on the ground, higher mid-dash.)
 const players = {};
 
 const MAX_HEALTH = 100;
@@ -127,6 +131,7 @@ io.on('connection', (socket) => {
 
   players[socket.id] = {
     x: spawn.x,
+    y: 0.9, // capsule center at ground level (matches the client's capsule height)
     z: spawn.z,
     rotationY: 0,
     team,
@@ -158,6 +163,9 @@ io.on('connection', (socket) => {
     if (!player || !player.alive) return;
 
     player.x = data.x;
+    // Height is optional on the wire: modes that never leave the ground
+    // don't send it, and older clients mid-refresh may not either.
+    player.y = typeof data.y === 'number' ? data.y : 0.9;
     player.z = data.z;
     player.rotationY = data.rotationY;
 
@@ -167,6 +175,7 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('playerMoved', {
       id: socket.id,
       x: player.x,
+      y: player.y,
       z: player.z,
       rotationY: player.rotationY,
     });

@@ -187,6 +187,88 @@
       background: rgba(52, 152, 219, 0.55);
     }
 
+    /* ---- Mobile mode (dual-stick + gesture pad) ---- */
+    /* The gesture pad sits ABOVE the stick area, per the design doc: visible
+       enough to find with your thumb, but see-through so it never blocks
+       your view of the game world. It's a real element (not a canvas
+       region-check) so it can capture its own pointer events cleanly. */
+    #gestureZone {
+      position: absolute;
+      left: 20%;
+      right: 20%;
+      top: 12%;
+      height: 42%;
+      border: 1px dashed rgba(160, 210, 255, 0.35);
+      border-radius: 14px;
+      background: rgba(120, 180, 255, 0.05);
+      display: none;
+      z-index: 4;
+      touch-action: none; /* stop the browser stealing drags for scroll/zoom */
+    }
+    /* The trace is drawn onto this canvas while the finger moves. */
+    #gestureCanvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none; /* the zone div handles the touches, not the canvas */
+    }
+    #gestureZoneLabel {
+      position: absolute;
+      top: 6px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: rgba(255, 255, 255, 0.3);
+      font-family: monospace;
+      font-size: 11px;
+      pointer-events: none;
+    }
+    /* Feedback flashed after each gesture ("jump-dash!", "no wall nearby"...) */
+    #gestureResultLabel {
+      position: absolute;
+      bottom: 8px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: rgba(255, 255, 255, 0.85);
+      font-family: monospace;
+      font-size: 14px;
+      text-shadow: 0 0 4px #000;
+      pointer-events: none;
+    }
+
+    /* Placeholder fire button - the design session locked movement/aim but
+       not the firing input (see backlog), so this is deliberately basic.
+       Sits just above the right stick's strip, at the screen edge, clear of
+       the gesture pad's 20% side margin. */
+    #fireButton {
+      position: absolute;
+      right: 18px;
+      bottom: 37%;
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: 2px solid rgba(231, 76, 60, 0.6);
+      background: rgba(231, 76, 60, 0.25);
+      color: #fff;
+      font-size: 24px;
+      display: none;
+      z-index: 5;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #fireButton:active {
+      background: rgba(231, 76, 60, 0.5);
+    }
+
+    /* Highlight on the join button we auto-suggest for touch devices */
+    .join-btn.suggested {
+      border-color: #35e0ff;
+      box-shadow: 0 0 8px rgba(53, 224, 255, 0.25);
+    }
+
     /* ---- Crosshair: screen-center aim dot for facing-equals-aim modes ---- */
     #crosshair {
       position: absolute;
@@ -353,20 +435,24 @@
       🎮 Console
       <span class="sub">Third-person - left stick move, right stick aim, trigger to fire (needs a gamepad)</span>
     </button>
+    <button class="join-btn" data-mode="mobile">
+      📱 Mobile
+      <span class="sub">Dual-stick + gesture pad - draw a shape above the sticks to dash along it (current design direction)</span>
+    </button>
     <button class="join-btn" data-mode="mobile-squad">
-      📱 Mobile: Squad Mode
+      📱 Mobile: Squad Mode (old experiment)
       <span class="sub">Top-down - lead 2 minions that auto-attack whatever you aim at</span>
     </button>
     <button class="join-btn" data-mode="mobile-fps">
-      📱 Mobile: Solo FPS Mode
+      📱 Mobile: Solo FPS Mode (old experiment)
       <span class="sub">First-person - touch joystick to move, drag to look, tap to fire (+2 minions)</span>
     </button>
     <button class="join-btn" data-mode="mobile-tps">
-      📱 Mobile: Solo TPS Mode
+      📱 Mobile: Solo TPS Mode (old experiment)
       <span class="sub">Third-person - same touch controls, camera behind your character (+2 minions)</span>
     </button>
     <button class="join-btn" data-mode="mobile-swarm">
-      📱 Mobile: Swarm Command
+      📱 Mobile: Swarm Command (old experiment)
       <span class="sub">Top-down commander - tap to move your swarm of 6, they auto-attack in range</span>
     </button>
   </div>
@@ -377,6 +463,14 @@
   <div id="touchJoystickBase"><div id="touchJoystickKnob"></div></div>
   <div id="aimJoystickBase"><div id="aimJoystickKnob"></div></div>
   <div id="touchHint">drag right side to look<br/>tap right side to fire</div>
+
+  <!-- Mobile mode's gesture pad (see-through dash-drawing zone) + fire button -->
+  <div id="gestureZone">
+    <canvas id="gestureCanvas"></canvas>
+    <div id="gestureZoneLabel">&#10024; dash pad - draw a shape</div>
+    <div id="gestureResultLabel"></div>
+  </div>
+  <button id="fireButton">&#128293;</button>
 
   <div id="crosshair"></div>
   <div id="hitMarker"></div>
@@ -391,6 +485,7 @@
     <h2>Switch mode</h2>
     <button class="menu-mode-btn" data-mode="pc">🖱️ PC</button>
     <button class="menu-mode-btn" data-mode="console">🎮 Console</button>
+    <button class="menu-mode-btn" data-mode="mobile">📱 Mobile (dual-stick)</button>
     <button class="menu-mode-btn" data-mode="mobile-squad">📱 Squad Mode</button>
     <button class="menu-mode-btn" data-mode="mobile-fps">📱 Solo FPS</button>
     <button class="menu-mode-btn" data-mode="mobile-tps">📱 Solo TPS</button>
