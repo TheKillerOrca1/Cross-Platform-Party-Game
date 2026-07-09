@@ -5,9 +5,9 @@ A prototype for a cross-platform asymmetric multiplayer party game: PC, console,
 ## The Seven Playable Modes
 Everyone joins from the same screen, picks a team (Red / Blue / Auto-balance), and plays together in one match:
 
-- 🖱️ **PC** — first-person, WASD + mouselook
-- 🎮 **Console** — third-person chase, dual-stick with aim-assist
-- 📱 **Mobile** — dual virtual sticks + a see-through gesture pad: draw a shape, release, and dash along it (**the current mobile design direction** — see `01_Platform_Playstyles.md`)
+- 🖱️ **PC** — first-person, WASD + mouselook (look up/down, hold RMB to aim, Space jump, Shift sprint)
+- 🎮 **Console** — dual-stick, rate-based aim, aim-down-sights on the trigger; toggles first/third person (default third)
+- 📱 **Mobile** — dual virtual sticks + the see-through **Drift Deck**: draw a shape by the aim stick, release, and dash along it; hold-aim-to-ADS, release-to-fire (**the current mobile design direction** — see `01_Platform_Playstyles.md`)
 - 📱 **Squad** *(old experiment)* — top-down, Brawl-Stars-style aim-and-release, commands 2 minions
 - 📱 **Solo FPS** *(old experiment)* — first-person, push-to-turn joystick controls, commands 2 minions
 - 📱 **Solo TPS** *(old experiment)* — third-person chase version of Solo FPS

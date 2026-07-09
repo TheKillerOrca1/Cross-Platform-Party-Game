@@ -18,11 +18,13 @@ A running list of unresolved design questions and future-scope ideas, organized 
   - Throw-and-recall weapons?
   - Deflecting projectiles with melee?
 - [ ] **VR: per-item reload/priming rituals** — the pattern (unique tactile gesture per magic item type) is locked; the individual gestures for each future item are TBD
-- [ ] **Mobile: real name for the gesture-dash mechanic** — "momentum pad" / "inertia pad" are placeholders only, neither is final
 - [ ] **Mobile: wall-swoop chain limit** — chainable 2–3 times? Pending balance testing
-- [ ] **Mobile: firing input** — the design session specified movement/aim only; how firing is triggered (button? something better?) is undecided. The prototype uses a placeholder fire button
-- [ ] **Mobile: control comfort settings** — joystick size/sensitivity and gesture-zone sensitivity as accessibility/comfort options. Planned, not needed for the first playable pass
-- [ ] **Mobile: first real-device playtest** — ⚠️ the entire dual-stick + gesture scheme has NOT been felt on an actual phone yet; the browser build exists to make this possible. All gesture tuning numbers are provisional until this happens
+- [ ] **Mobile: firing input** — the build now fires on **releasing the aim stick** (the ADS aim-and-release pattern; the separate fire button was removed). Confirm this is the final firing input on-device, or whether a dedicated fire control feels better
+- [ ] **Mobile: control comfort settings** — joystick size/sensitivity and Drift Deck sensitivity as accessibility/comfort options. Planned, not yet built
+- [ ] **Mobile: continued on-device tuning** — the first phone playtest happened and drove a round of changes (bigger dash throw, snappier cooldown, Drift Deck moved beside the aim stick, sticks shown at rest, health bar to top-center). Dash feel and all the new tuning numbers still want more thumbs-on-glass iteration
+- [ ] **First- vs third-person perspective** — now an ACTIVE experiment in the build: Console and Mobile can toggle between first- and third-person and **default to third** (so players can watch their own slide/dash/climb animations), while **PC is locked first-person**. Open question: is default-third right for Console/Mobile long-term, should PC stay locked, and does VR (untouched) need its own stance?
+- [ ] **ADS (aim-down-sights) — newly implemented as a universal mechanic** (hold to zoom + steady + remove hip-fire spread: RMB on PC, left trigger on Console, hold-the-aim-stick on Mobile). Open: exact zoom amount, spread values, whether every platform/weapon should have it, and how it interacts with VR's two-handed wand later
+- [ ] **PC jump / sprint / climb are in the prototype** as general movement (Space/Shift + auto-mantle). These are placeholder feel, not the decided PC kit — fold into the PC-movement-kit decision above
 - [ ] **How much selectable character/playstyle variety exists within each platform identity?** The old "two selectable playstyles per platform" frame was retired July 9, 2026; what replaces it (characters? loadouts? nothing at first?) is open
 - [ ] Balance testing: with difficulty tied to character choice rather than platform, does this hold up in actual play, or does one platform still end up feeling stronger?
 
@@ -66,7 +68,7 @@ A running list of unresolved design questions and future-scope ideas, organized 
 
 ## Naming
 - [ ] Working title / game name not yet decided
-- [ ] Real name for Mobile's gesture-dash mechanic (also listed under Platform Playstyles — placeholders: "momentum pad" / "inertia pad")
+- ✅ Mobile's gesture-dash mechanic is named the **"Drift Deck"** (short: **"DD"**) — resolved, in code + UI (superseded the "momentum pad" / "inertia pad" placeholders)
 
 ---
 
@@ -78,3 +80,13 @@ A running list of unresolved design questions and future-scope ideas, organized 
 - ❌ **"Can Mobile's minions attack?"** → SUPERSEDED: the Squad Leader / commander-minion concept (and Swappable Squad) was dropped entirely in favor of direct dual-stick character control. The question no longer applies.
 - ❌ **Mobile multi-mode control experiment** (Squad / Solo FPS / Solo TPS / Swarm Command prototype modes) → RESOLVED: standard dual virtual sticks + gesture zone won. Indirect unit-commanding felt less intense/immersive than the other three platforms.
 - ❌ **Console "Fluid Support" archetype (and its two TBD support playstyle options)** → SUPERSEDED: Console's identity is now **Parkour Combat** (Apex-not-Titanfall movement feel). Character/loadout specifics deferred (open item above).
+
+### July 9, 2026 — build session (camera/aim/ADS + core movement + Drift Deck refinement)
+- ✅ **Mobile gesture-dash name** → RESOLVED: **Drift Deck** (DD). Renamed everywhere in code + UI.
+- ✅ **Aim accuracy bug (shots landing below the crosshair)** → FIXED: shots now travel in full 3D along the exact camera-center crosshair ray, so "what you aim at is what you hit" on every platform. Root cause was firing horizontally from the chest while the camera looked from a different height/angle.
+- ✅ **Look up/down (pitch)** → IMPLEMENTED on PC, Console, Mobile (VR untouched).
+- ✅ **ADS (aim-down-sights)** → IMPLEMENTED as a universal hold-to-aim mechanic (RMB / left trigger / hold-aim-stick). Tuning still open (item above).
+- ✅ **Drift Deck S-stroke misclassification** (a downward S read as a backward dash) → FIXED: a mostly-vertical stroke is always a forward jump/slide; only a stroke that arcs out to a side is a free-form/backward dash.
+- ✅ **Mobile fire button** → REMOVED: firing is release-the-aim-stick now. (Whether that's final is still open, item above.)
+- 🔬 **First/third-person perspective** → now an active default-third experiment for Console/Mobile, PC locked first (open item above).
+- 🧪 Prototype-only additions this session (not design decisions): PC jump/sprint/Esc-menu, gravity + climbing/mantling for all walking modes, a hard arena clamp (dashes can't clip the border), death-menu scroll fix, faster/longer projectiles (48 u/s, 55u), and 9 tinted parkour/climb TEST blocks. All placeholder feel, to be revisited with the real PC kit + map session.
