@@ -50,13 +50,20 @@ const MOVE_SPEED = 4;
 // mount/climb ledges. Applies to every mode that has a walking avatar.
 const GRAVITY = 20;             // units/s^2 pulling the player down
 const JUMP_SPEED = 8;           // launch speed of a PC jump (~1.6u apex)
-const SPRINT_MULTIPLIER = 1.7;  // PC move-speed boost while holding Shift
+const SPRINT_MULTIPLIER = 1.7;  // PC move-speed boost while holding F (sprint)
+const CROUCH_MOVE_FACTOR = 0.45; // PC move-speed while crouched (holding Shift)
+const PC_SLIDE_DISTANCE = 9;    // how far a PC slide (F then Shift) carries you
+const PC_SLIDE_DURATION = 0.42; // seconds the PC slide lasts
 const CLIMB_RATE = 5;           // units/s the player scales a wall while mantling
 const CLIMB_REACH = 2.8;        // tallest ledge a climb can start onto (leaves the 3u border walls unclimbable, so you can't scale out of the arena)
 const CLIMB_MIN_LEDGE = 0.35;   // ledges shorter than this are just walked up; taller ones trigger a climb
 const PLAYER_RADIUS = 0.4;      // matches the capsule radius / collision ellipsoid
 const CAPSULE_HALF = 0.9;       // capsule center sits this far above the feet
 const LAND_TOLERANCE = 0.25;    // how far below a surface you can be and still settle onto it
+// Babylon's moveWithCollisions clamps a SINGLE call to ~0.1u of travel, so
+// anything faster than a walk (sprint, dashes) has to be broken into small
+// sub-moves or it silently caps out. This is the max distance per sub-move.
+const MOVE_COLLIDE_SUBSTEP = 0.09;
 // The playable ground is MAP_SIZE x MAP_SIZE, ringed by border walls so
 // nobody can wander off into the void.
 const MAP_SIZE = 70;
@@ -244,15 +251,19 @@ const STICK_HOME = {
   moveFracX: 0.13, moveFracY: 0.78, // left stick home
   aimFracX: 0.87, aimFracY: 0.82,   // right stick home (Drift Deck sits just above)
 };
-// Right stick: full deflection turns you this fast (radians/second),
-// scaled by the sensitivity slider. It is now an ADS + fire stick:
-// holding it aims-down-sights (steadier + zoomed), releasing it fires one
-// shot in the current aim (see the ADS section in 01_Platform_Playstyles).
-const DUAL_TURN_MAX_RATE = 3.0;
+// Right stick: full-edge deflection turns you this fast (radians/second),
+// scaled by the sensitivity slider. It is an ADS + fire stick: holding it
+// aims-down-sights (steadier + zoomed), releasing it fires one shot.
+const DUAL_TURN_MAX_RATE = 4.6;  // raised so an edge flick turns fast...
 // Vertical deflection pitches the aim up/down. Deliberately a lower rate
 // than horizontal turning - vertical aim wants finer control on a phone.
-const DUAL_PITCH_MAX_RATE = 2.0;
-const TOUCH_LOOK_PITCH_FACTOR = 0.6; // mobile vertical look is slower than horizontal
+const DUAL_PITCH_MAX_RATE = 3.0;
+const TOUCH_LOOK_PITCH_FACTOR = 0.55; // mobile vertical look is slower than horizontal
+// Exponent applied to stick deflection before it becomes a turn/look rate.
+// >1 makes the response DYNAMIC: near the center the stick is very steady
+// (fine combat aim), out at the edge it ramps up fast (quick turns). This is
+// the classic "expo" curve. 1 = linear.
+const AIM_STICK_EXPO = 2.4;
 
 // --- Drift Deck: recognizing the drawn stroke ---
 const GESTURE_MIN_STROKE_PX = 26;    // shorter marks are ignored (accidental taps)
@@ -423,6 +434,11 @@ let playerVY = 0;          // vertical velocity (units/s)
 let playerGrounded = true; // standing on ground or a box top?
 let jumpQueued = false;    // set by the PC jump key, consumed by the next physics step
 let climbState = null;     // while mantling a ledge: { topY, dirX, dirZ }
+let pcFireHeld = false;    // left mouse held: the render loop auto-fires (cooldown-limited)
+let pcCrouching = false;   // PC crouch (Shift held): ducked, slower, shorter hitbox
+// Effective capsule half-height: 0.9 standing, lower while crouched, so the
+// body physically ducks (also lowers the first-person eye).
+let currentCapsuleHalf = 0.9;
 
 // ----------------------------------------------------------------------------
 // SCENE SETUP (created once at load - camera/players/input are added later,
@@ -1313,6 +1329,14 @@ window.addEventListener('keydown', (e) => {
     // Space = jump (consumed in the vertical-physics step). preventDefault
     // stops the page from scrolling on space.
     if (e.key === ' ') { jumpQueued = true; e.preventDefault(); }
+    // Shift = crouch (held), UNLESS you're sprinting (F held) and grounded -
+    // then F+Shift kicks off a slide in the direction you're facing.
+    if (e.key === 'Shift' && !e.repeat) {
+      if (keysDown['f'] && !activeDash && playerGrounded) {
+        startPcSlide();
+      }
+    }
+    // F = sprint (held); handled in the render loop via keysDown['f'].
   }
 });
 window.addEventListener('keyup', (e) => {
@@ -1344,17 +1368,26 @@ window.addEventListener('mousemove', handlePcMouseLook);
 canvas.addEventListener('pointerdown', (e) => {
   if (currentMode !== 'pc') return;
   if (e.button === 0) {
+    // Left mouse: fire immediately, and HOLD to keep firing (the render loop
+    // polls pcFireHeld, rate-limited by the cooldown). Hold-to-fire is why
+    // "aim with RMB + hold LMB" now streams shots instead of firing once.
+    pcFireHeld = true;
     tryFireProjectile();
     if (canvas.requestPointerLock) canvas.requestPointerLock();
   } else if (e.button === 2) {
     adsActive = true; // hold right mouse to aim down sights
   }
 });
-// Right-mouse release ends ADS. Listened on window (not just the canvas) so
-// a release that happens after the cursor left the canvas still registers.
+// Button releases. Listened on window (not just the canvas) so a release
+// that happens after the cursor left the canvas still registers.
 window.addEventListener('pointerup', (e) => {
-  if (currentMode === 'pc' && e.button === 2) adsActive = false;
+  if (currentMode !== 'pc') return;
+  if (e.button === 0) pcFireHeld = false;
+  else if (e.button === 2) adsActive = false;
 });
+// If the window loses focus mid-hold, drop the held buttons so we don't get
+// stuck firing/aiming.
+window.addEventListener('blur', () => { pcFireHeld = false; });
 // Suppress the browser context menu so right-click-to-aim doesn't pop it.
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -1834,6 +1867,13 @@ function clamp(value, lo, hi) {
   return Math.max(lo, Math.min(hi, value));
 }
 
+// Expo response curve for a stick deflection in [-1,1]: keeps the sign, but
+// raises the magnitude to a power so small pushes stay gentle (steady aim)
+// and edge pushes stay strong (fast turns). See AIM_STICK_EXPO.
+function aimExpo(v) {
+  return Math.sign(v) * Math.pow(Math.abs(v), AIM_STICK_EXPO);
+}
+
 // --- Dual sticks (Brawl-Stars style: visible at a home position at rest) ---
 // Unlike the legacy floating sticks, these are always shown while in Mobile
 // mode. They spring to the thumb when grabbed and return to their home
@@ -2228,6 +2268,36 @@ function pushOutOfObstacles(x, z, dirX, dirZ) {
   return { x, z }; // stuck against something odd - collisions kept us out of the solid core anyway
 }
 
+// Deterministic obstacle backstop for dashes: if the capsule center is
+// inside an obstacle's footprint (expanded by its radius) AND the dash is
+// below that obstacle's top (i.e. NOT arced over it), shove it out to the
+// nearest face. This guarantees a fast dash can't tunnel through cover,
+// independent of Babylon's moveWithCollisions (which we also use, but which
+// caps per-call and can't be exercised in a backgrounded test tab). A
+// jump-dash arced above a box's top passes over it untouched.
+function resolveDashAgainstObstacles(mesh, wantY, moveDirX, moveDirZ) {
+  // A hair MORE than the capsule radius, so a dash pinned against a wall ends
+  // clearly beside the box - not exactly on its footprint edge, where the
+  // landing code would mistake it for standing on top.
+  const r = PLAYER_RADIUS + 0.08;
+  for (const b of obstacleBounds) {
+    if (wantY >= b.top - 0.1) continue; // arced above this obstacle - fly over
+    const px = mesh.position.x, pz = mesh.position.z;
+    const minX = b.cx - b.halfW - r, maxX = b.cx + b.halfW + r;
+    const minZ = b.cz - b.halfD - r, maxZ = b.cz + b.halfD + r;
+    if (px > minX && px < maxX && pz > minZ && pz < maxZ) {
+      // Push back to the face we ENTERED from (opposite the dash's dominant
+      // travel axis), so a fast dash stops AT the near wall instead of
+      // popping out the far side.
+      if (Math.abs(moveDirX) >= Math.abs(moveDirZ)) {
+        mesh.position.x = moveDirX >= 0 ? minX : maxX;
+      } else {
+        mesh.position.z = moveDirZ >= 0 ? minZ : maxZ;
+      }
+    }
+  }
+}
+
 // Evenly spaced waypoints along a straight line - used by the canned moves
 // (jump-dash, slide-dash, wall-swoop) so every dash type feeds the same
 // playback code as the free-form ones.
@@ -2292,20 +2362,24 @@ function stepActiveDash(deltaSeconds, local) {
     ? SLIDE_CENTER_Y
     : 0.9 + Math.sin(Math.PI * s) * dash.heightPeak;
 
-  // moveWithCollisions (not a position teleport) so cover boxes and the
-  // border still block/deflect a dash instead of being clipped through.
+  // HORIZONTAL move via moveWithCollisions so cover boxes and the border
+  // still block/deflect a dash. Only the x/z step is swept - the vertical
+  // (arc / duck) is purely cosmetic and is set directly below. (Feeding the
+  // vertical into moveWithCollisions made the collision system reject a
+  // downward slide, which both un-ducked the capsule AND, by inflating the
+  // step length, starved the forward motion through the anti-tunnel cap.)
   let stepX = wantX - local.mesh.position.x;
-  let stepY = wantY - local.mesh.position.y;
   let stepZ = wantZ - local.mesh.position.z;
-  const stepLen = Math.hypot(stepX, stepY, stepZ);
+  const horizLen = Math.hypot(stepX, stepZ);
   const maxStep = DASH_CATCHUP_SPEED * deltaSeconds;
-  if (stepLen > maxStep && stepLen > 0) {
-    const k = maxStep / stepLen;
+  if (horizLen > maxStep && horizLen > 0) {
+    const k = maxStep / horizLen;
     stepX *= k;
-    stepY *= k;
     stepZ *= k;
   }
-  local.mesh.moveWithCollisions(new BABYLON.Vector3(stepX, stepY, stepZ));
+  moveWithCollisionsSubstepped(local.mesh, stepX, 0, stepZ);
+  local.mesh.position.y = wantY; // arc / duck, directly (not collision-swept)
+  resolveDashAgainstObstacles(local.mesh, wantY, stepX, stepZ); // deterministic anti-tunnel backstop
 
   if (t >= 1) endActiveDash(local);
 }
@@ -2315,19 +2389,16 @@ function endActiveDash(local) {
   activeDash = null;
   lastDashEndedAt = performance.now();
 
-  // Land cleanly: back on the ground, nudged out of any obstacle footprint
-  // the arc happened to end on top of.
-  const n = dash.points.length;
-  let exitX = dash.points[n - 1].x - dash.points[n - 2].x;
-  let exitZ = dash.points[n - 1].z - dash.points[n - 2].z;
-  const exitLen = Math.hypot(exitX, exitZ);
-  if (exitLen > 1e-6) { exitX /= exitLen; exitZ /= exitLen; }
-  else { exitX = Math.sin(local.mesh.rotation.y); exitZ = Math.cos(local.mesh.rotation.y); }
-  const settled = pushOutOfObstacles(local.mesh.position.x, local.mesh.position.z, exitX, exitZ);
-  local.mesh.position.x = settled.x;
-  local.mesh.position.z = settled.z;
-  local.mesh.position.y = 0.9;
+  // Land on whatever surface is beneath us: the ground, or the top of a box
+  // a jump-dash arced onto. (The per-frame resolveDashAgainstObstacles has
+  // already kept us out of any wall we dashed into horizontally, so there's
+  // nothing to push out of here - we just settle onto the right height.)
   local.mesh.scaling.y = 1; // stand back up after a slide's duck
+  currentCapsuleHalf = CAPSULE_HALF;
+  const support = groundSupportHeight(local.mesh.position.x, local.mesh.position.z, Infinity);
+  local.mesh.position.y = support + CAPSULE_HALF;
+  playerVY = 0;
+  playerGrounded = true;
 
   // The path line lingers briefly so you can compare "what I drew" with
   // "where I went", then cleans itself up.
@@ -2344,6 +2415,24 @@ function cancelActiveDash() {
   activeDash = null;
   const local = playerAvatars[localPlayerId];
   if (local) local.mesh.scaling.y = 1; // undo any slide-duck squash
+}
+
+// PC slide (F held, then Shift): a quick forward slide in the direction the
+// player is facing, ducked low - reuses the same slide dash the Drift Deck
+// produces (so it ducks the hitbox and networks `low` identically).
+function startPcSlide() {
+  const local = playerAvatars[localPlayerId];
+  if (!local) return;
+  if (performance.now() - lastDashEndedAt < DASH_COOLDOWN_MS) return;
+  const yaw = local.mesh.rotation.y;
+  const dirX = Math.sin(yaw), dirZ = Math.cos(yaw);
+  startDash({
+    type: 'slide',
+    points: straightWaypoints(local.mesh.position.x, local.mesh.position.z, dirX, dirZ, PC_SLIDE_DISTANCE),
+    duration: PC_SLIDE_DURATION,
+    heightPeak: 0,
+    label: 'slide!',
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2392,35 +2481,22 @@ function executeGesture(cls, local) {
     return;
   }
 
-  if (cls.type === 'jump' || cls.type === 'slide') {
-    // Jump: the stroke's own (up-ish) direction maps straight to world -
-    // up = forward, so a slight lean steers the leap.
-    // Slide: the design is explicit that straight-down is a FORWARD slide,
-    // so the down-stroke's magnitude is flipped into forward motion
-    // (passing -|netY| makes gestureVecToWorld's "up" positive) while any
-    // lateral lean still steers, same as the jump.
-    const v = cls.type === 'jump'
-      ? gestureVecToWorld(cls.netX, cls.netY, yaw, 1)
-      : gestureVecToWorld(cls.netX, -Math.abs(cls.netY), yaw, 1);
-    const vLen = Math.hypot(v.x, v.z) || 1;
-    const dist = clamp(cls.pathLen * unitsPerPx, DASH_MIN_WORLD_LEN, DASH_MAX_WORLD_LEN);
-    flashPadTrace(cls.pts, GESTURE_COLORS[cls.type]);
-    startDash({
-      type: cls.type,
-      points: straightWaypoints(px, pz, v.x / vLen, v.z / vLen, dist),
-      duration: clamp(dist / DASH_SPEED, DASH_MIN_DURATION_S, DASH_MAX_DURATION_S),
-      heightPeak: cls.type === 'jump' ? JUMP_DASH_HEIGHT : 0,
-      label: cls.type === 'jump' ? 'jump-dash!' : 'slide-dash!',
-    });
-    return;
-  }
-
-  // Free-form: every resampled point of the drawn shape becomes a world
-  // waypoint (relative to where the stroke began), so the character flies
-  // the actual curve - including curves that end up BEHIND the start,
-  // which is the designed way to dash backward.
-  const origin = cls.pts[0];
-  const offsets = cls.pts.map((p) => gestureVecToWorld(p.x - origin.x, p.y - origin.y, yaw, unitsPerPx));
+  // All three "dash along the drawn shape" cases (jump, slide, free-form)
+  // share the same machinery: map the smoothed trace to world offsets from
+  // the start point, so the character flies the actual CURVE you drew, then
+  // clamp the length. They differ only in how the vertical axis is read and
+  // in the height profile:
+  //   - free-form: screen-up = forward, screen-down = BACKWARD (the only way
+  //     to dash backward), low "wind" hop.
+  //   - jump:      screen-up = forward; a big arc. Follows your curve.
+  //   - slide:     screen-DOWN = forward (a downward stroke is a forward
+  //     slide, per design), ducked low. Horizontal curve still followed, so
+  //     a wiggly slide wiggles forward.
+  const type = cls.type; // 'jump' | 'slide' | 'freeform'
+  const shapePts = (type === 'freeform') ? cls.pts : chaikinSmooth(cls.pts, GESTURE_SPLINE_ITERATIONS);
+  const origin = shapePts[0];
+  const vSign = (type === 'slide') ? -1 : 1; // slide flips down->forward
+  const offsets = shapePts.map((p) => gestureVecToWorld(p.x - origin.x, vSign * (p.y - origin.y), yaw, unitsPerPx));
   let worldLen = 0;
   for (let i = 1; i < offsets.length; i++) {
     worldLen += Math.hypot(offsets[i].x - offsets[i - 1].x, offsets[i].z - offsets[i - 1].z);
@@ -2429,13 +2505,15 @@ function executeGesture(cls, local) {
   let scale = 1;
   if (worldLen > DASH_MAX_WORLD_LEN) scale = DASH_MAX_WORLD_LEN / worldLen;
   else if (worldLen < DASH_MIN_WORLD_LEN) scale = DASH_MIN_WORLD_LEN / worldLen;
-  flashPadTrace(cls.pts, GESTURE_COLORS.freeform);
+  const heightPeak = type === 'jump' ? JUMP_DASH_HEIGHT : (type === 'slide' ? 0 : FREEFORM_HOP_HEIGHT);
+  const label = type === 'jump' ? 'jump-dash!' : (type === 'slide' ? 'slide-dash!' : 'swoop dash!');
+  flashPadTrace(cls.pts, GESTURE_COLORS[type]);
   startDash({
-    type: 'freeform',
+    type,
     points: offsets.map((o) => ({ x: px + o.x * scale, z: pz + o.z * scale })),
     duration: clamp((worldLen * scale) / DASH_SPEED, DASH_MIN_DURATION_S, DASH_MAX_DURATION_S),
-    heightPeak: FREEFORM_HOP_HEIGHT, // low "carried by the wind" hop; the shape lives in the ground plane
-    label: 'swoop dash!',
+    heightPeak,
+    label,
   });
 }
 
@@ -2722,9 +2800,9 @@ function maybeSendPositionToServer(deltaMs) {
 
   const { x, y, z } = local.mesh.position;
   const rotationY = local.mesh.rotation.y;
-  // Are we sliding (ducked low)? Others use this to shrink our hitbox and
-  // squash our capsule on their screens.
-  const low = !!(activeDash && activeDash.type === 'slide');
+  // Are we ducked (sliding OR crouching)? Others use this to shrink our
+  // hitbox and squash our capsule on their screens.
+  const low = pcCrouching || !!(activeDash && activeDash.type === 'slide');
 
   const moved = x !== lastSentX || y !== lastSentY || z !== lastSentZ || rotationY !== lastSentRotation || low !== lastSentLow;
   if (!moved) return;
@@ -3008,6 +3086,18 @@ function triggerHitFlash(id) {
   }, HIT_FLASH_DURATION_MS);
 }
 
+// moveWithCollisions but broken into small sub-moves, because a single
+// moveWithCollisions call silently clamps to ~0.1u (see MOVE_COLLIDE_SUBSTEP).
+// Without this, sprinting and dashing barely move. Walls still block/deflect
+// because each sub-move is itself collision-swept.
+function moveWithCollisionsSubstepped(mesh, dx, dy, dz) {
+  const len = Math.hypot(dx, dy, dz);
+  if (len === 0) return;
+  const n = Math.max(1, Math.ceil(len / MOVE_COLLIDE_SUBSTEP));
+  const vx = dx / n, vy = dy / n, vz = dz / n;
+  for (let i = 0; i < n; i++) mesh.moveWithCollisions(new BABYLON.Vector3(vx, vy, vz));
+}
+
 // ----------------------------------------------------------------------------
 // VERTICAL MOVEMENT: gravity, standing on boxes, jumping, climbing/mantling
 // ----------------------------------------------------------------------------
@@ -3051,7 +3141,8 @@ function findClimbLedge(x, z, feetY, dirX, dirZ) {
 // movement direction (for detecting a climb into a wall we're pushing on).
 function updateVerticalPhysics(local, dt, moveX, moveZ, hasMove) {
   const pos = local.mesh.position;
-  let feetY = pos.y - CAPSULE_HALF;
+  const half = currentCapsuleHalf; // lower while crouched, so the body ducks
+  let feetY = pos.y - half;
 
   // --- A climb/mantle is under way: scale straight up the wall ---
   if (climbState) {
@@ -3066,7 +3157,7 @@ function updateVerticalPhysics(local, dt, moveX, moveZ, hasMove) {
       climbState = null;
       playerGrounded = true;
     }
-    pos.y = feetY + CAPSULE_HALF;
+    pos.y = feetY + half;
     return;
   }
 
@@ -3093,7 +3184,7 @@ function updateVerticalPhysics(local, dt, moveX, moveZ, hasMove) {
   } else {
     playerGrounded = false;
   }
-  pos.y = newFeetY + CAPSULE_HALF;
+  pos.y = newFeetY + half;
 }
 
 // ----------------------------------------------------------------------------
@@ -3129,6 +3220,15 @@ scene.onBeforeRenderObservable.add(() => {
       if (keysDown['s']) moveZ -= 1;
       if (keysDown['a']) moveX -= 1;
       if (keysDown['d']) moveX += 1;
+      // Hold left mouse to keep firing (cooldown-limited). This is what makes
+      // "hold RMB to aim + hold LMB to fire" stream shots.
+      if (pcFireHeld) tryFireProjectile();
+      // Crouch (Shift held) while grounded and not mid-slide: duck the body.
+      pcCrouching = keysDown['shift'] && playerGrounded && !activeDash;
+      if (!activeDash) {
+        currentCapsuleHalf = pcCrouching ? SLIDE_CENTER_Y : CAPSULE_HALF;
+        local.mesh.scaling.y = pcCrouching ? SLIDE_SCALE_Y : 1;
+      }
     } else if (inputType === 'gamepad') {
       const gp = readGamepadState();
       moveX = gp.moveX;
@@ -3176,11 +3276,11 @@ scene.onBeforeRenderObservable.add(() => {
     //   - Fixed-angle cameras (top-down Squad) keep world-space compass
     //     movement: the screen never rotates, so up-on-the-stick = up-on-
     //     the-screen already holds without any transform.
-    if (activeDash && inputType === 'touch-dual') {
-      // A recorded dash is playing back: it owns movement this frame
-      // (horizontal AND vertical). Stick movement is ignored until it lands,
-      // but aiming (below) and firing stay live - tracking a target WHILE
-      // the dash animates is the whole point of recorded-then-executed.
+    if (activeDash) {
+      // A dash is playing back (mobile Drift Deck, or a PC slide): it owns
+      // movement this frame (horizontal AND vertical). Stick/key movement is
+      // ignored until it lands, but aiming (below) and firing stay live -
+      // tracking a target WHILE the dash animates is the whole point.
       stepActiveDash(deltaSeconds, local);
     } else {
       // Normal movement: horizontal via moveWithCollisions (slides along
@@ -3203,18 +3303,24 @@ scene.onBeforeRenderObservable.add(() => {
           worldMoveZ = -normX * sin + normZ * cos;
         }
 
-        // PC sprint: hold Shift to move faster.
-        const sprint = (currentMode === 'pc' && keysDown['shift']) ? SPRINT_MULTIPLIER : 1;
+        // PC speed modifiers: hold F to sprint, Shift to crouch (slower).
+        let speedMul = 1;
+        if (currentMode === 'pc') {
+          if (keysDown['f']) speedMul *= SPRINT_MULTIPLIER;
+          if (pcCrouching) speedMul *= CROUCH_MOVE_FACTOR;
+        }
 
-        // moveWithCollisions sweeps the capsule ellipsoid against every
-        // checkCollisions mesh and SLIDES along surfaces. Skipped while
-        // mid-climb (updateVerticalPhysics hugs the wall going up instead).
+        // Sweeps the capsule ellipsoid against every checkCollisions mesh
+        // and SLIDES along surfaces. Sub-stepped so sprint speed isn't capped
+        // by moveWithCollisions' per-call clamp. Skipped while mid-climb
+        // (updateVerticalPhysics hugs the wall going up instead).
         if (!climbState) {
-          local.mesh.moveWithCollisions(new BABYLON.Vector3(
-            worldMoveX * MOVE_SPEED * sprint * deltaSeconds,
+          moveWithCollisionsSubstepped(
+            local.mesh,
+            worldMoveX * MOVE_SPEED * speedMul * deltaSeconds,
             0,
-            worldMoveZ * MOVE_SPEED * sprint * deltaSeconds
-          ));
+            worldMoveZ * MOVE_SPEED * speedMul * deltaSeconds
+          );
         }
       }
 
@@ -3237,14 +3343,14 @@ scene.onBeforeRenderObservable.add(() => {
       local.mesh.rotation.y = gamepadAimYaw;
     } else if (inputType === 'touch-dual') {
       // Right stick: horizontal deflection = turn (yaw) RATE, vertical =
-      // look (pitch) RATE, both integrated each frame (push further = faster).
-      // While the stick is held we're aiming down sights, so look is slowed
-      // for finer aim. Works mid-dash too. Vertical is deliberately gentler
-      // than horizontal (TOUCH_LOOK_PITCH_FACTOR).
+      // look (pitch) RATE, both integrated each frame. A DYNAMIC expo curve
+      // (aimExpo) makes the stick very steady near the center for fine combat
+      // aim and ramp up fast out at the edge for quick turns. While the stick
+      // is held we're aiming down sights, so look is also slowed for fine aim.
       const adsF = adsActive ? ADS_SENS_FACTOR : 1;
-      touchAimYaw += dualTurnX * DUAL_TURN_MAX_RATE * sensitivityMultiplier * adsF * deltaSeconds;
+      touchAimYaw += aimExpo(dualTurnX) * DUAL_TURN_MAX_RATE * sensitivityMultiplier * adsF * deltaSeconds;
       aimPitch = clamp(
-        aimPitch + dualTurnY * DUAL_PITCH_MAX_RATE * TOUCH_LOOK_PITCH_FACTOR * sensitivityMultiplier * adsF * deltaSeconds,
+        aimPitch + aimExpo(dualTurnY) * DUAL_PITCH_MAX_RATE * TOUCH_LOOK_PITCH_FACTOR * sensitivityMultiplier * adsF * deltaSeconds,
         AIM_PITCH_MIN, AIM_PITCH_MAX
       );
       local.mesh.rotation.y = touchAimYaw;
@@ -3269,7 +3375,9 @@ scene.onBeforeRenderObservable.add(() => {
       // (it's supposed to feel like your own head, not a drone following
       // you).
       camera.position.x = local.mesh.position.x;
-      camera.position.y = local.mesh.position.y - 0.9 + EYE_HEIGHT; // relative to feet, not capsule center
+      // Eye sits above the feet, scaled down when crouched so ducking
+      // actually lowers your view. feet = center - currentCapsuleHalf.
+      camera.position.y = (local.mesh.position.y - currentCapsuleHalf) + EYE_HEIGHT * (currentCapsuleHalf / CAPSULE_HALF);
       camera.position.z = local.mesh.position.z;
       camera.rotation.y = local.mesh.rotation.y;
       // Look up/down. Babylon's UniversalCamera pitches with +rotation.x =
@@ -3449,6 +3557,9 @@ function leaveCurrentMode() {
   playerGrounded = true;
   jumpQueued = false;
   climbState = null;
+  pcFireHeld = false;
+  pcCrouching = false;
+  currentCapsuleHalf = CAPSULE_HALF;
 
   // --- Mobile dual-stick / Drift Deck state ---
   dualMoveTouchId = null;
