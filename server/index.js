@@ -168,6 +168,7 @@ io.on('connection', (socket) => {
     player.y = typeof data.y === 'number' ? data.y : 0.9;
     player.z = data.z;
     player.rotationY = data.rotationY;
+    player.low = !!data.low; // sliding/ducked (shorter hitbox on other clients)
 
     // Relay the new position to every OTHER connected client.
     // socket.broadcast.emit sends to everyone except the sender, since
@@ -178,6 +179,7 @@ io.on('connection', (socket) => {
       y: player.y,
       z: player.z,
       rotationY: player.rotationY,
+      low: player.low,
     });
   });
 

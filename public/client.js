@@ -218,20 +218,29 @@ const SWARM_CAM_MAX_RADIUS = 35; // furthest pinch-zoom
 const SWARM_COMMAND_SCATTER = 2.5; // random spread so tapped minions don't perfectly stack
 
 // ----------------------------------------------------------------------------
-// MOBILE MODE (dual-stick + gesture pad) - tuning constants
+// MOBILE MODE (dual-stick + DRIFT DECK) - tuning constants
 // ----------------------------------------------------------------------------
 // This is the CURRENT mobile design direction (see 01_Platform_Playstyles.md,
 // July 9 2026 session): fully manual dual-stick control plus a see-through
-// "dash pad" above the sticks where the player DRAWS their movement. The
-// four older mobile modes are kept around as superseded experiments.
+// "Drift Deck" (DD) - the panel next to the aim stick where the player DRAWS
+// their movement. The four older mobile modes are kept as superseded
+// experiments.
 //
-// ⚠ None of these numbers have been felt on a real phone yet - this build
-// exists precisely to make that playtest possible. Tune freely.
+// ⚠ First on-device playtest happened; these numbers are being tuned from
+// that feedback (bigger throw, snappier cooldown, Drift Deck moved beside
+// the aim stick). Keep tuning freely.
 
 // The bottom strip of the screen belongs to the two sticks (left half =
-// move, right half = aim). Touches above the strip hit the gesture pad
+// move, right half = aim). Touches above the strip hit the Drift Deck
 // (its own element) or nothing.
 const DUAL_STICK_STRIP_FRACTION = 0.35;
+// Both sticks are drawn at a fixed "home" position at rest (Brawl-Stars
+// style) and spring back there on release. These are the home CENTERS as a
+// fraction of the canvas, kept clear of the Drift Deck (upper right).
+const STICK_HOME = {
+  moveFracX: 0.13, moveFracY: 0.78, // left stick home
+  aimFracX: 0.87, aimFracY: 0.82,   // right stick home (Drift Deck sits just above)
+};
 // Right stick: full deflection turns you this fast (radians/second),
 // scaled by the sensitivity slider. It is now an ADS + fire stick:
 // holding it aims-down-sights (steadier + zoomed), releasing it fires one
@@ -242,39 +251,49 @@ const DUAL_TURN_MAX_RATE = 3.0;
 const DUAL_PITCH_MAX_RATE = 2.0;
 const TOUCH_LOOK_PITCH_FACTOR = 0.6; // mobile vertical look is slower than horizontal
 
-// --- Gesture pad: recognizing the drawn stroke ---
-const GESTURE_MIN_STROKE_PX = 30;    // shorter marks are ignored (accidental taps)
+// --- Drift Deck: recognizing the drawn stroke ---
+const GESTURE_MIN_STROKE_PX = 26;    // shorter marks are ignored (accidental taps)
 const GESTURE_SMOOTH_WINDOW = 5;     // moving-average window over raw finger points
 const GESTURE_RESAMPLE_POINTS = 28;  // the cleaned-up path is reduced to this many evenly spaced points
-// A stroke whose straight-line displacement is at least this fraction of
-// its total drawn length counts as "straight" (the simple/safe inputs);
-// anything below it is a curve (the expressive free-form inputs).
-const GESTURE_STRAIGHTNESS_MIN = 0.78;
-// How far off screen-vertical a straight stroke may lean and still count
-// as "up" (jump-dash) or "down" (slide-dash). Generous on purpose - this
-// is part of the "tolerance for imprecise starts" the design calls for.
-const GESTURE_VERTICAL_TOLERANCE_DEG = 40;
+// Corner-cutting (Chaikin) smoothing passes applied to a free-form stroke so
+// a jagged zigzag becomes a flowing squiggle instead of a literal jittery
+// copy of the finger path. Higher = looser/rounder.
+const GESTURE_SPLINE_ITERATIONS = 3;
+// A mostly-vertical stroke is a forward move (jump if it goes up, slide if it
+// goes down) EVEN IF it wiggles - only a stroke that arcs out to a SIDE
+// becomes a free-form (potentially backward) dash. This ratio is the gate: a
+// stroke wider than tall*this counts as a real sideways swoop. Fixes the bug
+// where an S-shaped downward stroke became a backward dash instead of a
+// forward slide.
+const GESTURE_SWOOP_ASPECT = 0.9;
 
 // --- Turning the drawn shape into a world-space dash path ---
-// Screen-up in the pad = "the way the camera faced when the gesture
+// Screen-up in the Drift Deck = "the way the camera faced when the gesture
 // STARTED" (locked at gesture start, per the design - moving the camera
 // mid-draw does not re-aim the dash). Screen-x = sideways.
-const DASH_WORLD_SCALE = 8;      // world units a full-pad-height stroke maps to
-const DASH_MIN_WORLD_LEN = 3;    // clamp: even a tiny valid stroke dashes a useful distance
-const DASH_MAX_WORLD_LEN = 13;   // clamp: no cross-map teleports
-const DASH_SPEED = 14;           // world units/second along the traced path
+// Throw values bumped up from the first playtest to compensate for the now-
+// smaller Drift Deck (a full-height stroke covers fewer pixels).
+const DASH_WORLD_SCALE = 13;     // world units a full-Drift-Deck-height stroke maps to
+const DASH_MIN_WORLD_LEN = 4;    // clamp: even a tiny valid stroke dashes a useful distance
+const DASH_MAX_WORLD_LEN = 20;   // clamp: no cross-map teleports
+const DASH_SPEED = 22;           // world units/second along the traced path
 // Hard ceiling on how fast the capsule may chase its path. Normal playback
 // peaks around 1.5x DASH_SPEED (smoothstep easing), safely under this; it
 // only bites when a wall pinned the capsule mid-dash while the path moved
 // on - without the cap, clearing the wall snapped the capsule several
 // units in a single frame (found in testing).
-const DASH_CATCHUP_SPEED = 24;
-const DASH_MIN_DURATION_S = 0.3;
+const DASH_CATCHUP_SPEED = 34;
+const DASH_MIN_DURATION_S = 0.26;
 const DASH_MAX_DURATION_S = 1.0;
-const JUMP_DASH_HEIGHT = 2.2;    // arc peak of the jump-dash
+const JUMP_DASH_HEIGHT = 2.4;    // arc peak of the jump-dash
 const FREEFORM_HOP_HEIGHT = 1.0; // curved dashes get a low "carried by wind" hop
-const DASH_COOLDOWN_MS = 250;    // small gap after a dash before the next gesture lands
-const DASH_PATH_LINGER_MS = 600; // how long the glowing world-path line outlives the dash
+const DASH_COOLDOWN_MS = 80;     // much snappier than the first pass (was 250) - fast chaining
+const DASH_PATH_LINGER_MS = 500; // how long the glowing world-path line outlives the dash
+// Slide-dash ducks the player: a squashed, low capsule with a shorter
+// hitbox, so it slips under shots aimed at a standing player.
+const SLIDE_SCALE_Y = 0.5;                        // vertical squash of the capsule while sliding
+const SLIDE_CENTER_Y = CAPSULE_HALF * SLIDE_SCALE_Y; // squashed center rests on the ground (~0.45)
+const HIT_VERTICAL_SLIDE = SLIDE_CENTER_Y + 0.3;  // shorter vertical hit window while sliding
 
 // --- Wall-swoop (first pass - "detect wall + swipe + impulse", per plan) ---
 // The gesture is a sharp out-and-back "V": swipe toward a nearby wall,
@@ -336,7 +355,7 @@ const MODE_CONFIG = {
   },
   mobile: {
     label: 'Mobile',
-    // The CURRENT mobile design (dual-stick + gesture pad). Third-person
+    // The CURRENT mobile design (dual-stick + Drift Deck). Third-person
     // chase deliberately: the whole point of this build is judging whether
     // the dash follows your drawn shape, and you can only SEE that arc
     // from behind your character, not through its eyes. (Camera choice
@@ -1705,7 +1724,7 @@ canvas.addEventListener('pointerup', onSwarmTouchEnd);
 canvas.addEventListener('pointercancel', onSwarmTouchEnd);
 
 // ----------------------------------------------------------------------------
-// INPUT: Mobile (dual-stick + gesture pad) - the CURRENT mobile design
+// INPUT: Mobile (dual-stick + Drift Deck) - the CURRENT mobile design
 // ----------------------------------------------------------------------------
 // Three input surfaces, all usable at the same time (each touch is tracked
 // by its own pointerId, so a thumb on each stick plus a finger drawing in
@@ -1724,19 +1743,17 @@ canvas.addEventListener('pointercancel', onSwarmTouchEnd);
 //      thumb back to the aim stick, and track a target while the dash
 //      plays out.
 //
-// HOW A DRAWN SHAPE BECOMES MOVEMENT
-// The pad is read like a bird's-eye minimap of your immediate surroundings:
+// HOW A DRAWN SHAPE BECOMES MOVEMENT (the Drift Deck)
+// The Deck is read like a bird's-eye minimap of your immediate surroundings:
 // screen-up = "the way the camera faced when the gesture started",
-// screen-x = sideways. Two special straight strokes are the easy/safe moves
-// (their vertical direction means height, not backward):
-//   - start LOW, drag UP          -> jump-dash  (forward leap arc)
-//   - start HIGH, drag STRAIGHT DOWN -> slide-dash (forward ground slide -
-//     deliberately NOT a backward dash!)
-// Everything curved is free-form: the traced shape itself (smoothed into a
-// clean swoop) becomes the flight path. This is why moving BACKWARD
-// requires drawing a curve that swoops around a side and ends at the
-// bottom - simple inputs stay safe, curvy inputs unlock the full move set,
-// which is the design's intended casual/skilled split.
+// screen-x = sideways. A mostly-vertical stroke is an easy/safe forward move:
+//   - goes UP   -> jump-dash  (forward leap arc)
+//   - goes DOWN -> slide-dash (forward ground slide, ducked low; deliberately
+//     NOT a backward dash - even a wiggly S counts as forward)
+// A stroke that arcs out to a SIDE is free-form: the traced shape (smoothed
+// into a loose flowing spline) becomes the flight path. This is the only way
+// to move BACKWARD - swoop a curve around to a side and end low. Simple
+// inputs stay safe; curvy inputs unlock the full move set.
 //
 // A sharp out-and-back "V" stroke is the separate wall-swoop gesture:
 // swipe toward a nearby wall then away, and you get a push-off impulse in
@@ -1745,7 +1762,6 @@ canvas.addEventListener('pointercancel', onSwarmTouchEnd);
 const gestureZoneEl = document.getElementById('gestureZone');
 const gestureCanvasEl = document.getElementById('gestureCanvas');
 const gestureResultLabelEl = document.getElementById('gestureResultLabel');
-const fireButtonEl = document.getElementById('fireButton');
 const perspectiveToggleBtnEl = document.getElementById('perspectiveToggleBtn');
 
 // Mobile's on-screen first/third-person toggle (Console uses a gamepad
@@ -1776,7 +1792,6 @@ let dualAimOriginX = 0;
 let dualAimOriginY = 0;
 let dualTurnX = 0; // -1..1 horizontal deflection -> yaw (turn) rate
 let dualTurnY = 0; // -1..1 vertical deflection (up = positive) -> pitch rate
-let fireHeld = false; // (legacy) placeholder fire button held - removed in the Drift Deck pass
 
 // --- Gesture pad state ---
 let gestureCtx = null;       // 2d context for drawing the finger trace
@@ -1797,16 +1812,38 @@ function clamp(value, lo, hi) {
   return Math.max(lo, Math.min(hi, value));
 }
 
-// --- Dual sticks (canvas touches in the bottom strip of the screen) ---
-// Same floating-stick pattern as the legacy modes: the stick base appears
-// wherever the thumb lands inside its region, which is far more forgiving
-// than demanding a precise hit on a fixed circle.
+// --- Dual sticks (Brawl-Stars style: visible at a home position at rest) ---
+// Unlike the legacy floating sticks, these are always shown while in Mobile
+// mode. They spring to the thumb when grabbed and return to their home
+// position on release, so a player can always see where each stick lives.
+function stickHomePx(fracX, fracY) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: rect.width * fracX, y: rect.height * fracY };
+}
+function homeMoveStick() {
+  const h = stickHomePx(STICK_HOME.moveFracX, STICK_HOME.moveFracY);
+  joystickBaseEl.style.left = `${h.x - 55}px`;
+  joystickBaseEl.style.top = `${h.y - 55}px`;
+  joystickKnobEl.style.left = '30px';
+  joystickKnobEl.style.top = '30px';
+  joystickBaseEl.style.display = 'block';
+}
+function homeAimStick() {
+  const h = stickHomePx(STICK_HOME.aimFracX, STICK_HOME.aimFracY);
+  aimJoystickBaseEl.classList.add('turn-stick');
+  aimJoystickBaseEl.style.left = `${h.x - 55}px`;
+  aimJoystickBaseEl.style.top = `${h.y - 55}px`;
+  aimJoystickKnobEl.style.left = '30px';
+  aimJoystickKnobEl.style.top = '30px';
+  aimJoystickBaseEl.style.display = 'block';
+}
+
 function onDualTouchStart(e) {
   if (!currentMode || MODE_CONFIG[currentMode].inputType !== 'touch-dual') return;
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
-  // Above the stick strip is the gesture pad's territory (its own element
+  // Above the stick strip is the Drift Deck's territory (its own element
   // grabs those touches before the canvas ever sees them) or dead space.
   if (y < rect.height * (1 - DUAL_STICK_STRIP_FRACTION)) return;
 
@@ -1862,17 +1899,17 @@ function onDualTouchEnd(e) {
     dualMoveTouchId = null;
     dualMoveX = 0;
     dualMoveZ = 0;
-    joystickBaseEl.style.display = 'none';
+    homeMoveStick(); // return to home (stays visible), not hidden
   } else if (e.pointerId === dualAimTouchId) {
     // Releasing the aim stick FIRES one shot in the current aim (the ADS
     // aim-and-release scheme from the design session), then drops out of
-    // aim-down-sights.
+    // aim-down-sights. The stick returns to its home position.
     dualAimTouchId = null;
     dualTurnX = 0;
     dualTurnY = 0;
-    hideAimJoystick();
     tryFireProjectile();
     adsActive = false;
+    homeAimStick();
   }
 }
 
@@ -1881,19 +1918,16 @@ canvas.addEventListener('pointermove', onDualTouchMove);
 canvas.addEventListener('pointerup', onDualTouchEnd);
 canvas.addEventListener('pointercancel', onDualTouchEnd);
 
-// --- Placeholder fire button (see backlog: mobile firing input undecided) ---
-// Hold to auto-fire at the normal cooldown rate; the render loop does the
-// repeating so the rate limit lives in exactly one place (tryFireProjectile).
-fireButtonEl.addEventListener('pointerdown', (e) => {
-  e.preventDefault(); // stop the browser synthesizing a duplicate mouse click
-  fireHeld = true;
-  tryFireProjectile();
-});
-['pointerup', 'pointercancel', 'pointerleave'].forEach((evt) => {
-  fireButtonEl.addEventListener(evt, () => { fireHeld = false; });
+// Keep the resting sticks in their home spots if the window/orientation
+// changes while playing and no finger is currently on them.
+window.addEventListener('resize', () => {
+  if (currentMode === 'mobile') {
+    if (dualMoveTouchId === null) homeMoveStick();
+    if (dualAimTouchId === null) homeAimStick();
+  }
 });
 
-// --- Gesture pad canvas (the visible finger trace) ---
+// --- Drift Deck canvas (the visible finger trace) ---
 // The pad's <canvas> is resized to its on-screen pixels whenever the pad is
 // shown (and on window resizes) so traces are crisp on high-DPI phones.
 function syncGestureCanvasSize() {
@@ -2021,6 +2055,25 @@ function shoelaceArea(points) {
   return a / 2;
 }
 
+// Chaikin corner-cutting: replaces each segment's sharp corners with two
+// points 1/4 and 3/4 along it, rounding the polyline. Run a few times, a
+// jagged zigzag becomes a smooth flowing squiggle - a LOOSE spline through
+// the trace, not a literal copy of every jitter. Endpoints are preserved.
+function chaikinSmooth(points, iterations) {
+  let pts = points;
+  for (let it = 0; it < iterations && pts.length >= 3; it++) {
+    const out = [pts[0]];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p = pts[i], q = pts[i + 1];
+      out.push({ x: p.x * 0.75 + q.x * 0.25, y: p.y * 0.75 + q.y * 0.25 });
+      out.push({ x: p.x * 0.25 + q.x * 0.75, y: p.y * 0.25 + q.y * 0.75 });
+    }
+    out.push(pts[pts.length - 1]);
+    pts = out;
+  }
+  return pts;
+}
+
 // Maps a pad-space vector to a world-space one. Screen-up = the camera's
 // forward AT GESTURE START (the yaw passed in), screen-right = its right.
 // (rotationY convention from the rest of this file: forward = (sin yaw,
@@ -2055,9 +2108,16 @@ function classifyGesture(rawPoints, zoneHeightPx) {
   const last = pts[pts.length - 1];
   const netX = last.x - first.x;
   const netY = last.y - first.y;
-  const straightness = Math.hypot(netX, netY) / pathLen;
   // Where the stroke STARTED: 0 = bottom of the pad, 1 = top.
   const startHeight = 1 - first.y / zoneHeightPx;
+  // Bounding spread of the stroke (how wide vs how tall it is).
+  let minX = first.x, maxX = first.x, minY = first.y, maxY = first.y;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+  }
+  const horizSpread = maxX - minX;
+  const vertSpread = maxY - minY;
 
   // --- Wall-swoop check first: a sharp out-and-back "V" ---
   // Apex = the point of the stroke farthest from where it began.
@@ -2083,25 +2143,29 @@ function classifyGesture(rawPoints, zoneHeightPx) {
     }
   }
 
-  // --- Straight strokes: the simple/safe moves ---
-  // Direction is the primary signal; the start-position bands are generous
-  // on purpose ("tolerance for imprecise starting points" in the design).
-  if (straightness >= GESTURE_STRAIGHTNESS_MIN) {
-    // Angle off screen-up: 0° = straight up, ±180° = straight down.
-    const angleFromUp = (Math.atan2(netX, -netY) * 180) / Math.PI;
-    if (Math.abs(angleFromUp) <= GESTURE_VERTICAL_TOLERANCE_DEG && startHeight <= 0.8) {
-      return { type: 'jump', netX, netY, pathLen, pts };
-    }
-    if (Math.abs(angleFromUp) >= 180 - GESTURE_VERTICAL_TOLERANCE_DEG && startHeight >= 0.2) {
-      return { type: 'slide', netX, netY, pathLen, pts };
-    }
-    // A straight sideways stroke isn't in the spec - fall through and let
-    // it be a free-form path (reads as a lateral dodge, which feels like
-    // the natural meaning). Judgment call, revisit after device testing.
+  // --- Mostly-vertical stroke => a FORWARD jump or slide ---
+  // The key fix: classify by whether the stroke is a sideways SWOOP or not,
+  // not by how "straight" it is. A wiggly-but-vertical stroke (like an S
+  // drawn downward) is still a forward slide - only a stroke that arcs out
+  // to a side (wide relative to tall) becomes a free-form/backward dash.
+  // This is what stops a downward S from being read as a backward dash.
+  const isSwoop = horizSpread > vertSpread * GESTURE_SWOOP_ASPECT;
+  if (!isSwoop && vertSpread >= GESTURE_MIN_STROKE_PX * 0.4) {
+    // Up = jump, down = slide. Prefer the net vertical direction; if the
+    // stroke is nearly flat vertically (a symmetric S), fall back to the
+    // start band (started low = jump, started high = slide) - both forward.
+    let goingUp;
+    if (Math.abs(netY) > 8) goingUp = netY < 0; // screen-up is -y
+    else goingUp = startHeight < 0.5;
+    return goingUp
+      ? { type: 'jump', netX, netY, pathLen, pts }
+      : { type: 'slide', netX, netY, pathLen, pts };
   }
 
-  // --- Everything else: the drawn shape IS the flight path ---
-  return { type: 'freeform', pts, pathLen };
+  // --- Everything else (a real sideways swoop): the drawn shape IS the
+  // flight path, smoothed into a loose flowing spline. This is the only way
+  // to dash BACKWARD (arc a curve around to a side and end low). ---
+  return { type: 'freeform', pts: chaikinSmooth(pts, GESTURE_SPLINE_ITERATIONS), pathLen };
 }
 
 // Is there wall/cover within `range` units in this direction? Marches a
@@ -2170,6 +2234,10 @@ function startDash(spec) {
   line.isPickable = false;
 
   activeDash = { ...spec, elapsed: 0, line };
+  // Slide-dash ducks low: squash the capsule so it's a shorter target
+  // (the matching shorter hitbox is applied via the networked `low` flag).
+  const local = playerAvatars[localPlayerId];
+  if (local) local.mesh.scaling.y = (spec.type === 'slide') ? SLIDE_SCALE_Y : 1;
   showGestureResult(spec.label, GESTURE_COLORS[spec.type]);
   window.__mobileDebug.lastGesture = { type: spec.type, at: performance.now() };
 }
@@ -2196,8 +2264,11 @@ function stepActiveDash(deltaSeconds, local) {
   // Never dash out of the map.
   wantX = clamp(wantX, -(MAP_HALF - 1), MAP_HALF - 1);
   wantZ = clamp(wantZ, -(MAP_HALF - 1), MAP_HALF - 1);
-  // Height: a sine arc peaking mid-dash (zero for slides).
-  const wantY = 0.9 + Math.sin(Math.PI * s) * dash.heightPeak;
+  // Height: a sine arc peaking mid-dash for jumps/swoops; a slide instead
+  // stays ducked low the whole time (squashed capsule resting on the ground).
+  const wantY = (dash.type === 'slide')
+    ? SLIDE_CENTER_Y
+    : 0.9 + Math.sin(Math.PI * s) * dash.heightPeak;
 
   // moveWithCollisions (not a position teleport) so cover boxes and the
   // border still block/deflect a dash instead of being clipped through.
@@ -2234,6 +2305,7 @@ function endActiveDash(local) {
   local.mesh.position.x = settled.x;
   local.mesh.position.z = settled.z;
   local.mesh.position.y = 0.9;
+  local.mesh.scaling.y = 1; // stand back up after a slide's duck
 
   // The path line lingers briefly so you can compare "what I drew" with
   // "where I went", then cleans itself up.
@@ -2248,6 +2320,8 @@ function cancelActiveDash() {
   if (!activeDash) return;
   if (activeDash.line && !activeDash.line.isDisposed()) activeDash.line.dispose();
   activeDash = null;
+  const local = playerAvatars[localPlayerId];
+  if (local) local.mesh.scaling.y = 1; // undo any slide-duck squash
 }
 
 // ---------------------------------------------------------------------------
@@ -2490,6 +2564,10 @@ function connectToServer() {
     avatar.targetY = typeof data.y === 'number' ? data.y : 0.9; // dash height (0.9 = grounded)
     avatar.targetZ = data.z;
     avatar.mesh.rotation.y = data.rotationY;
+    // Sliding players duck: squash their capsule and remember it so our
+    // shots use the shorter hit window against them.
+    avatar.low = !!data.low;
+    avatar.mesh.scaling.y = avatar.low ? SLIDE_SCALE_Y : 1;
   });
 
   socket.on('playerLeft', (data) => {
@@ -2609,6 +2687,7 @@ let lastSentX = null;
 let lastSentY = null;
 let lastSentZ = null;
 let lastSentRotation = null;
+let lastSentLow = false;
 let msSinceLastSend = 0;
 
 function maybeSendPositionToServer(deltaMs) {
@@ -2621,15 +2700,19 @@ function maybeSendPositionToServer(deltaMs) {
 
   const { x, y, z } = local.mesh.position;
   const rotationY = local.mesh.rotation.y;
+  // Are we sliding (ducked low)? Others use this to shrink our hitbox and
+  // squash our capsule on their screens.
+  const low = !!(activeDash && activeDash.type === 'slide');
 
-  const moved = x !== lastSentX || y !== lastSentY || z !== lastSentZ || rotationY !== lastSentRotation;
+  const moved = x !== lastSentX || y !== lastSentY || z !== lastSentZ || rotationY !== lastSentRotation || low !== lastSentLow;
   if (!moved) return;
 
   lastSentX = x;
   lastSentY = y;
   lastSentZ = z;
   lastSentRotation = rotationY;
-  socket.emit('move', { x, y, z, rotationY });
+  lastSentLow = low;
+  socket.emit('move', { x, y, z, rotationY, low });
 }
 
 // ----------------------------------------------------------------------------
@@ -2831,7 +2914,10 @@ function updateProjectiles(deltaSeconds) {
         const dx = avatar.mesh.position.x - proj.mesh.position.x;
         const dz = avatar.mesh.position.z - proj.mesh.position.z;
         const dy = avatar.mesh.position.y - proj.mesh.position.y;
-        if (dx * dx + dz * dz < HIT_RADIUS * HIT_RADIUS && Math.abs(dy) < HIT_VERTICAL) {
+        // A sliding (ducked) target has a shorter vertical hit window, so a
+        // shot at standing height sails over them.
+        const vhit = avatar.low ? HIT_VERTICAL_SLIDE : HIT_VERTICAL;
+        if (dx * dx + dz * dz < HIT_RADIUS * HIT_RADIUS && Math.abs(dy) < vhit) {
           proj.hitTargets.add(id);
           socket.emit('hit', { targetId: id, damage: PLAYER_PROJECTILE_DAMAGE });
           triggerHitMarker();
@@ -3057,9 +3143,7 @@ scene.onBeforeRenderObservable.add(() => {
     } else if (inputType === 'touch-dual') {
       moveX = dualMoveX;
       moveZ = dualMoveZ;
-      // Hold-to-autofire on the placeholder fire button; the cooldown
-      // inside tryFireProjectile is what actually limits the rate.
-      if (fireHeld) tryFireProjectile();
+      // Firing is on aim-stick release now (no separate fire button).
     }
 
     // Movement space depends on the camera:
@@ -3344,14 +3428,13 @@ function leaveCurrentMode() {
   jumpQueued = false;
   climbState = null;
 
-  // --- Mobile dual-stick / gesture-pad state ---
+  // --- Mobile dual-stick / Drift Deck state ---
   dualMoveTouchId = null;
   dualMoveX = 0;
   dualMoveZ = 0;
   dualAimTouchId = null;
   dualTurnX = 0;
   dualTurnY = 0;
-  fireHeld = false;
   gesturePointerId = null;
   gesturePoints = [];
   cancelActiveDash();
@@ -3367,7 +3450,6 @@ function leaveCurrentMode() {
   hideAimJoystick();
   touchHintEl.style.display = 'none';
   gestureZoneEl.style.display = 'none';
-  fireButtonEl.style.display = 'none';
   perspectiveToggleBtnEl.style.display = 'none';
   document.getElementById('crosshair').style.display = 'none';
   document.getElementById('hudHealthBar').style.display = 'none';
@@ -3377,6 +3459,7 @@ function leaveCurrentMode() {
   // --- Network send throttle ---
   lastSentX = null;
   lastSentY = null;
+  lastSentLow = false;
   lastSentZ = null;
   lastSentRotation = null;
   msSinceLastSend = 0;
@@ -3446,13 +3529,14 @@ function startGame(mode) {
   document.getElementById('joinScreen').style.display = 'none';
   respawnCountdownEl.style.display = 'none';
   if (MODE_CONFIG[mode].inputType === 'touch-dual') {
-    // The current mobile design: both sticks + the gesture pad + the
-    // placeholder fire button all come up together.
-    touchHintEl.innerHTML = 'left: move &nbsp;|&nbsp; right: aim &nbsp;|&nbsp; &#128293;: fire<br/>draw a shape in the pad to dash';
+    // The current mobile design: both sticks (shown at rest) + the Drift Deck.
+    // Firing is release-the-aim-stick; there is no separate fire button.
+    touchHintEl.innerHTML = 'left: move &nbsp;|&nbsp; right: aim, release to fire<br/>draw in the Drift Deck to dash';
     touchHintEl.style.display = 'block';
     gestureZoneEl.style.display = 'block';
-    fireButtonEl.style.display = 'block';
-    syncGestureCanvasSize(); // the pad only has a real size once visible
+    homeMoveStick(); // both sticks visible at their home positions
+    homeAimStick();
+    syncGestureCanvasSize(); // the Drift Deck only has a real size once visible
   } else if (MODE_CONFIG[mode].inputType === 'touch') {
     if (mode === 'mobile-squad') {
       touchHintEl.innerHTML = 'right stick: aim<br/>release to fire';

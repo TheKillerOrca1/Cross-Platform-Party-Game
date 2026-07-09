@@ -199,20 +199,19 @@
       background: rgba(52, 152, 219, 0.55);
     }
 
-    /* ---- Mobile mode (dual-stick + gesture pad) ---- */
-    /* The gesture pad sits ABOVE the stick area, per the design doc: visible
-       enough to find with your thumb, but see-through so it never blocks
-       your view of the game world. It's a real element (not a canvas
-       region-check) so it can capture its own pointer events cleanly. */
+    /* ---- Mobile mode: the DRIFT DECK (dash-drawing pad) ---- */
+    /* Sits directly ABOVE the right (aim) stick - small and tucked into the
+       bottom-right, not centered, so it's reachable with the right thumb
+       without covering the view. See-through so it never blocks the game. */
     #gestureZone {
       position: absolute;
-      left: 20%;
-      right: 20%;
-      top: 12%;
-      height: 42%;
-      border: 1px dashed rgba(160, 210, 255, 0.35);
+      right: 2%;
+      width: 40%;
+      bottom: 30%;
+      height: 34%;
+      border: 1px dashed rgba(160, 210, 255, 0.4);
       border-radius: 14px;
-      background: rgba(120, 180, 255, 0.05);
+      background: rgba(120, 180, 255, 0.06);
       display: none;
       z-index: 4;
       touch-action: none; /* stop the browser stealing drags for scroll/zoom */
@@ -250,30 +249,8 @@
       pointer-events: none;
     }
 
-    /* Placeholder fire button - the design session locked movement/aim but
-       not the firing input (see backlog), so this is deliberately basic.
-       Sits just above the right stick's strip, at the screen edge, clear of
-       the gesture pad's 20% side margin. */
-    #fireButton {
-      position: absolute;
-      right: 18px;
-      bottom: 37%;
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
-      border: 2px solid rgba(231, 76, 60, 0.6);
-      background: rgba(231, 76, 60, 0.25);
-      color: #fff;
-      font-size: 24px;
-      display: none;
-      z-index: 5;
-      touch-action: none;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    #fireButton:active {
-      background: rgba(231, 76, 60, 0.5);
-    }
+    /* (The old placeholder fire button is gone - firing is now tied to
+       releasing the aim stick, so there's no separate button.) */
 
     /* Perspective toggle (Mobile): switch first/third person. Small, tucked
        top-left under the HUD so it's out of the thumbs' way. */
@@ -333,17 +310,19 @@
       box-shadow: inset 0 0 40px 8px rgba(255, 60, 60, 0.55);
     }
 
-    /* ---- Own health bar (bottom-left HUD) ---- */
+    /* ---- Own health bar (top-center HUD) ---- */
     #hudHealthBar {
       position: absolute;
-      bottom: 12px;
-      left: 12px;
-      width: 180px;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 200px;
       display: none;
       z-index: 5;
       pointer-events: none;
       font-family: monospace;
       color: #fff;
+      text-align: center;
     }
     #hudHealthBarTrack {
       height: 14px;
@@ -472,7 +451,7 @@
     </button>
     <button class="join-btn" data-mode="mobile">
       📱 Mobile
-      <span class="sub">Dual-stick + gesture pad - draw a shape above the sticks to dash along it (current design direction)</span>
+      <span class="sub">Dual-stick + Drift Deck - draw a shape by the aim stick to dash along it (current design direction)</span>
     </button>
     <button class="join-btn" data-mode="mobile-squad">
       📱 Mobile: Squad Mode (old experiment)
@@ -499,13 +478,12 @@
   <div id="aimJoystickBase"><div id="aimJoystickKnob"></div></div>
   <div id="touchHint">drag right side to look<br/>tap right side to fire</div>
 
-  <!-- Mobile mode's gesture pad (see-through dash-drawing zone) + fire button -->
+  <!-- Mobile mode's Drift Deck (see-through dash-drawing pad) -->
   <div id="gestureZone">
     <canvas id="gestureCanvas"></canvas>
-    <div id="gestureZoneLabel">&#10024; dash pad - draw a shape</div>
+    <div id="gestureZoneLabel">&#10024; Drift Deck - draw to dash</div>
     <div id="gestureResultLabel"></div>
   </div>
-  <button id="fireButton">&#128293;</button>
   <button id="perspectiveToggleBtn">&#128065; view: 3rd</button>
 
   <div id="crosshair"></div>
