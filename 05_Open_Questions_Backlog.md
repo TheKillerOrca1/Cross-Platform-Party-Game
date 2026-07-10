@@ -27,6 +27,7 @@ A running list of unresolved design questions and future-scope ideas, organized 
 - [ ] **PC jump / sprint / climb are in the prototype** as general movement (Space/Shift + auto-mantle). These are placeholder feel, not the decided PC kit — fold into the PC-movement-kit decision above
 - [ ] **How much selectable character/playstyle variety exists within each platform identity?** The old "two selectable playstyles per platform" frame was retired July 9, 2026; what replaces it (characters? loadouts? nothing at first?) is open
 - [ ] Balance testing: with difficulty tied to character choice rather than platform, does this hold up in actual play, or does one platform still end up feeling stronger?
+- [ ] Wall-tag proportions for Console run-face vs PC wall-jump-pair, informed by the new map's N-S wall lanes
 
 ## Map & Level Design ⚠️ next major design thread
 - [ ] **Dedicated map design session — not yet started.** Now a hard dependency for three platforms simultaneously, on one shared map:
@@ -42,6 +43,7 @@ A running list of unresolved design questions and future-scope ideas, organized 
 - [ ] Relic passing mechanic details — targeted throw? auto-pass to nearest ally? cooldown or range limit?
 - [ ] Are extraction points always visible to defenders, or dynamically revealed/hidden?
 - [ ] Confirm final round length: 5, 6, or 8 minutes? (6 min is current lean, needs playtesting)
+- [ ] Relic-as-ball throw/kick mechanic — distance, cooldown, mid-flight interception rules (see 02_Gamemode_CTF.md)
 
 ## Art Direction
 - [ ] Finalize specific color palette (hex references)

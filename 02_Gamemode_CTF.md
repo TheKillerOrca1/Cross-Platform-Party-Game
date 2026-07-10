@@ -26,6 +26,21 @@ This is the **first and primary gamemode** for launch. The name "Capture the Fla
 - **Defenders can also pick up and relocate the Relic** — this lets defenders actively bait attackers by moving it to a more defensible position, rather than passively guarding a fixed point
 - **Holding the Relic disables attacking** — the carrier cannot use offensive abilities while holding it, creating risk/reward around who carries it and forcing coordination (escorts) for safe transport
 
+## Relic-as-Ball (Throw/Kick) — New Mechanic Under Development
+
+Raised during map design, not yet fully specified — flagged here so it isn't lost, and pulled into the Backlog doc as well.
+
+**Core idea:** instead of only running the Relic home, the carrier can throw or kick it ahead, then use their platform's mobility ability to catch up and reclaim it. Passing to teammates becomes correspondingly easier/faster.
+
+**Why this matters mechanically:** the existing rule that "holding the Relic disables attacking" was written assuming the Relic is always either held or sitting still on the ground. A thrown/kicked Relic is briefly in flight and owned by *no one* — which opens a genuinely new contest: any platform's mobility can compete to intercept it mid-air or mid-bounce (VR fling-climbing into its path, Console wall-running to cut an angle, Mobile's gesture-dash, PC's reflex-based positioning). This is a real rule change, not just flavor, and needs its own design pass before it's implementable.
+
+**Open questions (also added to 05_Open_Questions_Backlog.md):**
+- [ ] Throw/kick distance and arc — fixed, or scaled by input (hold-to-charge)?
+- [ ] Cooldown between throws, if any
+- [ ] Can the Relic be intercepted mid-flight by anyone, or only certain platforms/abilities?
+- [ ] Does the carrier regain attacking ability the instant they release it, or only after it lands?
+- [ ] Interaction with the Attacker Momentum meter — does a dropped-then-intercepted throw count the same as a drop?
+
 ## Extraction Points
 - **Multiple possible extraction points, varying by map** — different maps can offer different numbers/placements of extraction zones
 - This ties map design directly to platform balance — e.g., a map with a distant extraction point might favor Console's parkour mobility, while a tight, close-quarters map might favor VR's melee physicality or PC Assassin bursts
