@@ -1,0 +1,364 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1950" font-family="Verdana, sans-serif">
+  <rect width="1500" height="1950" fill="#12160f"/>
+  <text x="750" y="34" fill="#e8e2c9" font-size="22" font-weight="bold" text-anchor="middle">Map Blueprint v11 — Overtaken Castle (reference version)</text>
+  <text x="750" y="55" fill="#9aa89a" font-size="13" text-anchor="middle">Hay bale collision fixed, corner N-S lanes added near the castle</text>
+  <g stroke="#3a4a3c" stroke-width="1" opacity="0.3">
+    <line x1="100" y1="90" x2="100" y2="1830"/><line x1="150" y1="90" x2="150" y2="1830"/>
+    <line x1="200" y1="90" x2="200" y2="1830"/><line x1="250" y1="90" x2="250" y2="1830"/>
+    <line x1="300" y1="90" x2="300" y2="1830"/><line x1="350" y1="90" x2="350" y2="1830"/>
+    <line x1="400" y1="90" x2="400" y2="1830"/><line x1="450" y1="90" x2="450" y2="1830"/>
+    <line x1="500" y1="90" x2="500" y2="1830"/><line x1="550" y1="90" x2="550" y2="1830"/>
+    <line x1="600" y1="90" x2="600" y2="1830"/><line x1="650" y1="90" x2="650" y2="1830"/>
+    <line x1="700" y1="90" x2="700" y2="1830"/><line x1="750" y1="90" x2="750" y2="1830"/>
+    <line x1="800" y1="90" x2="800" y2="1830"/><line x1="850" y1="90" x2="850" y2="1830"/>
+    <line x1="900" y1="90" x2="900" y2="1830"/><line x1="950" y1="90" x2="950" y2="1830"/>
+    <line x1="1000" y1="90" x2="1000" y2="1830"/><line x1="1050" y1="90" x2="1050" y2="1830"/>
+    <line x1="1100" y1="90" x2="1100" y2="1830"/><line x1="1150" y1="90" x2="1150" y2="1830"/>
+    <line x1="1200" y1="90" x2="1200" y2="1830"/><line x1="1250" y1="90" x2="1250" y2="1830"/>
+    <line x1="1300" y1="90" x2="1300" y2="1830"/><line x1="1350" y1="90" x2="1350" y2="1830"/>
+    <line x1="1400" y1="90" x2="1400" y2="1830"/>
+    <line x1="100" y1="90" x2="1400" y2="90"/><line x1="100" y1="140" x2="1400" y2="140"/>
+    <line x1="100" y1="190" x2="1400" y2="190"/><line x1="100" y1="240" x2="1400" y2="240"/>
+    <line x1="100" y1="290" x2="1400" y2="290"/><line x1="100" y1="340" x2="1400" y2="340"/>
+    <line x1="100" y1="390" x2="1400" y2="390"/><line x1="100" y1="440" x2="1400" y2="440"/>
+    <line x1="100" y1="490" x2="1400" y2="490"/><line x1="100" y1="540" x2="1400" y2="540"/>
+    <line x1="100" y1="590" x2="1400" y2="590"/><line x1="100" y1="640" x2="1400" y2="640"/>
+    <line x1="100" y1="690" x2="1400" y2="690"/><line x1="100" y1="740" x2="1400" y2="740"/>
+    <line x1="100" y1="790" x2="1400" y2="790"/><line x1="100" y1="840" x2="1400" y2="840"/>
+    <line x1="100" y1="890" x2="1400" y2="890"/><line x1="100" y1="940" x2="1400" y2="940"/>
+    <line x1="100" y1="990" x2="1400" y2="990"/><line x1="100" y1="1040" x2="1400" y2="1040"/>
+    <line x1="100" y1="1090" x2="1400" y2="1090"/><line x1="100" y1="1140" x2="1400" y2="1140"/>
+    <line x1="100" y1="1190" x2="1400" y2="1190"/><line x1="100" y1="1240" x2="1400" y2="1240"/>
+    <line x1="100" y1="1290" x2="1400" y2="1290"/><line x1="100" y1="1340" x2="1400" y2="1340"/>
+    <line x1="100" y1="1390" x2="1400" y2="1390"/><line x1="100" y1="1440" x2="1400" y2="1440"/>
+    <line x1="100" y1="1490" x2="1400" y2="1490"/><line x1="100" y1="1540" x2="1400" y2="1540"/>
+    <line x1="100" y1="1590" x2="1400" y2="1590"/><line x1="100" y1="1640" x2="1400" y2="1640"/>
+    <line x1="100" y1="1690" x2="1400" y2="1690"/><line x1="100" y1="1740" x2="1400" y2="1740"/>
+    <line x1="100" y1="1790" x2="1400" y2="1790"/><line x1="100" y1="1830" x2="1400" y2="1830"/>
+  </g>
+  <text x="70" y="1845" fill="#5a6b5a" font-size="10">Grid: each cell = 5m (50px). Contour lines: 2m elevation interval.</text>
+  <g transform="translate(1080,100)">
+    <rect x="0" y="0" width="360" height="130" fill="#0e120f" stroke="#5a6b5a" stroke-width="1.5"/>
+    <text x="180" y="18" fill="#cfcfc0" font-size="11" font-weight="bold" text-anchor="middle">Movement Speed Reference (1 second of travel)</text>
+    <rect x="20" y="40" width="40" height="14" fill="#3a5a80" stroke="#bcd6f0"/>
+    <text x="70" y="51" fill="#bcd6f0" font-size="11">Walk: 4 m/s (matches current prototype MOVE_SPEED)</text>
+    <rect x="20" y="65" width="70" height="14" fill="#7a5a2a" stroke="#e0c080"/>
+    <text x="100" y="76" fill="#e0c080" font-size="11">Sprint: ~7 m/s (estimate — not yet tuned in-engine)</text>
+    <text x="180" y="105" fill="#9aa88a" font-size="10" text-anchor="middle">Straight-line spawn→castle (~174m): ~44s walk / ~25s sprint</text>
+    <text x="180" y="119" fill="#9aa88a" font-size="10" text-anchor="middle">(actual routing around obstacles/hills will run longer)</text>
+  </g>
+  <text x="750" y="115" fill="#bcd6f0" font-size="15" font-weight="bold" text-anchor="middle">ATTACKER HOME AREA (fortified)</text>
+  <circle cx="280" cy="200" r="32" fill="#3a5a80" stroke="#bcd6f0" stroke-width="2"/>
+  <text x="280" y="206" fill="#fff" font-size="13" text-anchor="middle">L</text>
+  <text x="280" y="248" fill="#bcd6f0" font-size="12" text-anchor="middle">Spawn: Left</text>
+  <circle cx="750" cy="150" r="32" fill="#3a5a80" stroke="#bcd6f0" stroke-width="2"/>
+  <text x="750" y="156" fill="#fff" font-size="13" text-anchor="middle">M</text>
+  <text x="750" y="123" fill="#bcd6f0" font-size="12" text-anchor="middle">Spawn: Mid</text>
+  <circle cx="1220" cy="200" r="32" fill="#3a5a80" stroke="#bcd6f0" stroke-width="2"/>
+  <text x="1220" y="206" fill="#fff" font-size="13" text-anchor="middle">R</text>
+  <text x="1220" y="248" fill="#bcd6f0" font-size="12" text-anchor="middle">Spawn: Right</text>
+  <circle cx="750" cy="270" r="28" fill="#7a5a2a" stroke="#e0c080" stroke-width="2.5"/>
+  <text x="750" y="276" fill="#fff" font-size="11" text-anchor="middle">RELIC</text>
+  <text x="750" y="315" fill="#e0c080" font-size="13" font-weight="bold" text-anchor="middle">EXTRACTION</text>
+  <g>
+    <rect x="1010" y="230" width="130" height="75" fill="#4a3a2a" stroke="#2a1f16" stroke-width="2"/>
+    <polyline points="1010,230 1075,193 1140,230" fill="none" stroke="#2a1f16" stroke-width="3"/>
+    <rect x="1052" y="263" width="24" height="42" fill="#1a1410"/>
+    <text x="1075" y="325" fill="#c9a97a" font-size="11" text-anchor="middle">Old Stable (inside walls)</text>
+  </g>
+  <circle cx="190" cy="290" r="16" fill="#2e4834"/><circle cx="215" cy="308" r="19" fill="#33513c"/>
+  <path d="M 150,360 L 250,372 L 350,383 L 455,393" fill="none" stroke="#0a0f0a" stroke-width="46" opacity="0.5" stroke-linecap="round"/>
+  <path d="M 505,396 L 580,401 L 650,403" fill="none" stroke="#0a0f0a" stroke-width="46" opacity="0.5" stroke-linecap="round"/>
+  <path d="M 800,403 L 860,401 L 925,398" fill="none" stroke="#0a0f0a" stroke-width="46" opacity="0.5" stroke-linecap="round"/>
+  <path d="M 975,394 L 1050,388 L 1125,380" fill="none" stroke="#0a0f0a" stroke-width="46" opacity="0.5" stroke-linecap="round"/>
+  <path d="M 1175,375 L 1240,367 L 1300,360" fill="none" stroke="#0a0f0a" stroke-width="46" opacity="0.5" stroke-linecap="round"/>
+  <path d="M 150,360 L 250,372 L 350,383 L 455,393" fill="none" stroke="#6b6559" stroke-width="40" stroke-linecap="round"/>
+  <path d="M 505,396 L 580,401 L 650,403" fill="none" stroke="#6b6559" stroke-width="40" stroke-linecap="round"/>
+  <path d="M 800,403 L 860,401 L 925,398" fill="none" stroke="#6b6559" stroke-width="40" stroke-linecap="round"/>
+  <path d="M 975,394 L 1050,388 L 1125,380" fill="none" stroke="#6b6559" stroke-width="40" stroke-linecap="round"/>
+  <path d="M 1175,375 L 1240,367 L 1300,360" fill="none" stroke="#6b6559" stroke-width="40" stroke-linecap="round"/>
+  <path d="M 150,360 L 250,372 L 350,383 L 455,393" fill="none" stroke="#3a3630" stroke-width="2"/>
+  <path d="M 505,396 L 580,401 L 650,403" fill="none" stroke="#3a3630" stroke-width="2"/>
+  <path d="M 800,403 L 860,401 L 925,398" fill="none" stroke="#3a3630" stroke-width="2"/>
+  <path d="M 975,394 L 1050,388 L 1125,380" fill="none" stroke="#3a3630" stroke-width="2"/>
+  <path d="M 1175,375 L 1240,367 L 1300,360" fill="none" stroke="#3a3630" stroke-width="2"/>
+  <circle cx="250" cy="372" r="9" fill="#33513c"/><circle cx="1050" cy="388" r="9" fill="#33513c"/>
+  <circle cx="1240" cy="367" r="8" fill="#2e4834"/>
+  <text x="750" y="345" fill="#c9c4b0" font-size="10" text-anchor="middle">Wall ~3m thick, ~8m tall, gentle curve bulging toward midfield</text>
+  <g>
+    <circle cx="650" cy="403" r="38" fill="#0a0f0a" opacity="0.4"/>
+    <circle cx="650" cy="403" r="38" fill="#4a4640" stroke="#8a7a55" stroke-width="3"/>
+    <text x="650" y="400" fill="#e8dcb8" font-size="9" text-anchor="middle">BASTION</text>
+    <text x="650" y="412" fill="#e8dcb8" font-size="9" text-anchor="middle">TOWER</text>
+    <text x="650" y="455" fill="#9aa88a" font-size="10" text-anchor="middle">wall physically joins the tower here</text>
+  </g>
+  <g>
+    <polygon points="455,383 505,392 500,412 460,406" fill="#4a4640" stroke="#3a3630"/>
+    <polygon points="465,400 490,404 483,415" fill="#4a4640" stroke="#3a3630" opacity="0.8"/>
+    <text x="480" y="440" fill="#9aa88a" font-size="10" text-anchor="middle">Breach 1</text>
+  </g>
+  <g>
+    <rect x="690" y="383" width="110" height="70" fill="none" stroke="#8a7a55" stroke-width="4"/>
+    <polygon points="690,453 730,428 760,453 800,453 800,480 690,480" fill="#2a1f16" opacity="0.85"/>
+    <text x="745" y="502" fill="#e0c080" font-size="12" font-weight="bold" text-anchor="middle">Large Rundown Main Gate</text>
+  </g>
+  <g>
+    <polygon points="925,388 975,393 970,414 930,408" fill="#4a4640" stroke="#3a3630"/>
+    <text x="950" y="440" fill="#9aa88a" font-size="10" text-anchor="middle">Breach 2</text>
+  </g>
+  <g>
+    <polygon points="1125,368 1175,373 1170,396 1130,390" fill="#4a4640" stroke="#3a3630"/>
+    <text x="1150" y="420" fill="#9aa88a" font-size="10" text-anchor="middle">Breach 3</text>
+  </g>
+  <text x="750" y="530" fill="#7fa0d0" font-size="11" text-anchor="middle">4 ways through: Breach 1, Main Gate, Breach 2, Breach 3 — plus climb/vault the wall anywhere</text>
+  <g>
+    <circle cx="380" cy="440" r="17" fill="#2e4834"/><circle cx="410" cy="455" r="20" fill="#33513c"/>
+    <circle cx="1230" cy="410" r="17" fill="#2e4834"/><circle cx="1260" cy="425" r="20" fill="#33513c"/>
+  </g>
+  <rect x="586" y="524" width="26" height="170" fill="#0a0f0a" opacity="0.5" transform="rotate(6 599 609)"/>
+  <rect x="582" y="520" width="26" height="170" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(6 595 605)"/>
+  <text x="560" y="510" fill="#7fa0d0" font-size="9" text-anchor="middle">N–S lane</text>
+  <g fill="none" stroke="#5a7a5a" stroke-width="1.5" opacity="0.75">
+    <path d="M 970,580 Q 1070,555 1180,590 Q 1240,640 1210,710 Q 1160,760 1080,755 Q 990,745 950,690 Q 930,630 970,580 Z"/>
+    <path d="M 995,600 Q 1075,578 1160,608 Q 1205,648 1180,700 Q 1140,738 1075,733 Q 1005,725 975,678 Q 960,635 995,600 Z"/>
+    <path d="M 1020,622 Q 1080,606 1140,626 Q 1170,655 1150,688 Q 1115,712 1065,708 Q 1020,700 1005,665 Q 1000,640 1020,622 Z"/>
+    <path d="M 1050,645 Q 1090,635 1120,650 Q 1135,668 1120,685 Q 1090,698 1060,690 Q 1042,672 1050,645 Z"/>
+  </g>
+  <path d="M 970,650 Q 1000,700 1060,730 Q 1000,745 950,700 Q 940,670 970,650 Z" fill="#1a2418" opacity="0.35"/>
+  <text x="1090" y="570" fill="#8fae91" font-size="9" text-anchor="middle">+2m</text>
+  <text x="1095" y="600" fill="#8fae91" font-size="9" text-anchor="middle">+4m</text>
+  <text x="1090" y="622" fill="#8fae91" font-size="9" text-anchor="middle">+6m</text>
+  <text x="1085" y="648" fill="#8fae91" font-size="9" text-anchor="middle">+8m</text>
+  <text x="1085" y="785" fill="#7d9c7f" font-size="10" text-anchor="middle">Natural rise, east tower built atop it — bird's-eye view over the wheat field</text>
+  <g>
+    <circle cx="1100" cy="670" r="34" fill="#4a4640" stroke="#8a7a55" stroke-width="2.5"/>
+    <text x="1100" y="670" fill="#e8dcb8" font-size="10" text-anchor="middle">TOWER</text>
+    <text x="1100" y="683" fill="#e8dcb8" font-size="10" text-anchor="middle">(east)</text>
+  </g>
+  <rect x="880" y="670" width="26" height="180" fill="#0a0f0a" opacity="0.5" transform="rotate(-6 893 760)"/>
+  <rect x="876" y="666" width="26" height="180" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(-6 889 756)"/>
+  <g fill="none" stroke="#5a7a5a" stroke-width="1.5" opacity="0.75">
+    <path d="M 250,850 Q 350,822 450,858 Q 500,905 470,970 Q 420,1015 340,1008 Q 260,998 225,945 Q 210,890 250,850 Z"/>
+    <path d="M 275,870 Q 355,846 435,875 Q 470,912 448,960 Q 405,995 340,988 Q 275,978 250,935 Q 240,895 275,870 Z"/>
+    <path d="M 300,892 Q 355,875 415,895 Q 440,922 422,955 Q 385,980 335,973 Q 300,963 285,930 Q 280,905 300,892 Z"/>
+    <path d="M 325,915 Q 360,905 395,918 Q 410,935 397,955 Q 370,970 340,963 Q 322,948 325,915 Z"/>
+  </g>
+  <path d="M 250,950 Q 280,995 340,1015 Q 280,1025 235,985 Q 225,960 250,950 Z" fill="#1a2418" opacity="0.35"/>
+  <text x="365" y="840" fill="#8fae91" font-size="9" text-anchor="middle">+2m</text>
+  <text x="365" y="862" fill="#8fae91" font-size="9" text-anchor="middle">+4m</text>
+  <text x="365" y="884" fill="#8fae91" font-size="9" text-anchor="middle">+6m</text>
+  <text x="360" y="908" fill="#8fae91" font-size="9" text-anchor="middle">+8m</text>
+  <text x="360" y="1040" fill="#7d9c7f" font-size="10" text-anchor="middle">Natural rise, west tower + watchtower share the high ground</text>
+  <g>
+    <circle cx="390" cy="950" r="34" fill="#4a4640" stroke="#8a7a55" stroke-width="2.5"/>
+    <text x="390" y="950" fill="#e8dcb8" font-size="10" text-anchor="middle">TOWER</text>
+    <text x="390" y="963" fill="#e8dcb8" font-size="10" text-anchor="middle">(west)</text>
+  </g>
+  <g>
+    <rect x="290" y="890" width="55" height="65" fill="#5a564c" stroke="#3a3630" stroke-width="2"/>
+    <text x="317" y="978" fill="#c9c4b0" font-size="10" text-anchor="middle">Watchtower</text>
+  </g>
+  <text x="750" y="560" fill="#d7e8d9" font-size="16" font-weight="bold" text-anchor="middle">CONTESTED MIDFIELD</text>
+  <rect x="196" y="606" width="240" height="34" fill="#0a0f0a" opacity="0.5" transform="rotate(-18 316 623)"/>
+  <rect x="190" y="600" width="240" height="34" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(-18 310 617)"/>
+  <path d="M 320,760 Q 380,720 420,770 T 500,780" fill="none" stroke="#3a3630" stroke-width="38" stroke-linecap="round"/>
+  <path d="M 320,760 Q 380,720 420,770 T 500,780" fill="none" stroke="#6b6559" stroke-width="30" stroke-linecap="round"/>
+  <text x="400" y="815" fill="#9aa88a" font-size="10" text-anchor="middle">Curved crumbled wall</text>
+  <rect x="486" y="886" width="190" height="28" fill="#0a0f0a" opacity="0.5" transform="rotate(8 581 900)"/>
+  <rect x="480" y="880" width="190" height="28" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(8 575 894)"/>
+  <text x="575" y="940" fill="#c9c4b0" font-size="9" text-anchor="middle">~19m long, ~2.5m thick, ~7m tall</text>
+  <rect x="206" y="856" width="150" height="28" fill="#0a0f0a" opacity="0.5" transform="rotate(-40 281 870)"/>
+  <rect x="200" y="850" width="150" height="28" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(-40 275 864)"/>
+  <g>
+    <rect x="330" y="690" width="90" height="60" fill="#55524a" stroke="#3a3630" stroke-width="2"/>
+    <polyline points="330,690 375,640 400,690" fill="none" stroke="#3a3630" stroke-width="3"/>
+    <text x="375" y="770" fill="#c9c4b0" font-size="10" text-anchor="middle">Chapel ruins</text>
+  </g>
+  <rect x="564" y="704" width="26" height="170" fill="#0a0f0a" opacity="0.5" transform="rotate(-6 577 789)"/>
+  <rect x="560" y="700" width="26" height="170" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(-6 573 785)"/>
+  <path d="M 900,900 Q 970,940 940,1000 T 1000,1080" fill="none" stroke="#3a3630" stroke-width="38" stroke-linecap="round"/>
+  <path d="M 900,900 Q 970,940 940,1000 T 1000,1080" fill="none" stroke="#6b6559" stroke-width="30" stroke-linecap="round"/>
+  <text x="1000" y="1110" fill="#9aa88a" font-size="10" text-anchor="middle">Curved wall (diagonal N-S run)</text>
+  <rect x="400" y="990" width="200" height="28" fill="#0a0f0a" opacity="0.5" transform="rotate(-12 500 1004)"/>
+  <rect x="394" y="984" width="200" height="28" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(-12 494 998)"/>
+  <rect x="936" y="1176" width="190" height="28" fill="#0a0f0a" opacity="0.5" transform="rotate(10 1031 1190)"/>
+  <rect x="930" y="1170" width="190" height="28" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(10 1025 1184)"/>
+  <rect x="196" y="620" width="26" height="200" fill="#0a0f0a" opacity="0.5" transform="rotate(-8 209 720)"/>
+  <rect x="192" y="616" width="26" height="200" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(-8 205 716)"/>
+  <text x="150" y="700" fill="#7fa0d0" font-size="9" text-anchor="middle">N–S wall-run</text>
+  <text x="150" y="712" fill="#7fa0d0" font-size="9" text-anchor="middle">(toward castle)</text>
+  <rect x="1332" y="524" width="26" height="200" fill="#0a0f0a" opacity="0.5" transform="rotate(8 1345 624)"/>
+  <rect x="1328" y="520" width="26" height="200" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(8 1341 620)"/>
+  <text x="1400" y="600" fill="#7fa0d0" font-size="9" text-anchor="middle">N–S wall-run</text>
+  <rect x="144" y="1084" width="26" height="210" fill="#0a0f0a" opacity="0.5" transform="rotate(6 157 1189)"/>
+  <rect x="140" y="1080" width="26" height="210" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(6 153 1185)"/>
+  <rect x="1354" y="1054" width="26" height="200" fill="#0a0f0a" opacity="0.5" transform="rotate(-6 1367 1154)"/>
+  <rect x="1350" y="1050" width="26" height="200" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(-6 1363 1150)"/>
+  <g>
+    <circle cx="750" cy="1010" r="34" fill="#2a1f16"/>
+    <circle cx="750" cy="960" r="82" fill="#2e4834"/>
+    <circle cx="690" cy="995" r="64" fill="#33513c"/>
+    <circle cx="815" cy="990" r="68" fill="#345a3f"/>
+    <circle cx="750" cy="920" r="58" fill="#3a5f44"/>
+    <text x="750" y="1070" fill="#a9c4ab" font-size="11" text-anchor="middle">Large central tree — anchor cover</text>
+  </g>
+  <g>
+    <rect x="1060" y="750" width="110" height="70" fill="none" stroke="#6b6559" stroke-width="3"/>
+    <circle cx="1115" cy="785" r="18" fill="#3a3a38" stroke="#8a7a55" stroke-width="2"/>
+    <text x="1115" y="845" fill="#c9c4b0" font-size="10" text-anchor="middle">Well + courtyard</text>
+  </g>
+  <g>
+    <path d="M 1250,650 C 1290,700 1210,760 1260,830 C 1300,900 1220,970 1260,1040 C 1300,1110 1220,1180 1250,1250 C 1275,1310 1230,1350 1240,1380" fill="none" stroke="#213a3a" stroke-width="44" stroke-linecap="round"/>
+    <path d="M 1250,650 C 1290,700 1210,760 1260,830 C 1300,900 1220,970 1260,1040 C 1300,1110 1220,1180 1250,1250 C 1275,1310 1230,1350 1240,1380" fill="none" stroke="#0e1f1f" stroke-width="28" stroke-linecap="round"/>
+    <text x="1330" y="960" fill="#7fb0b0" font-size="11" text-anchor="middle">Second canal</text>
+    <text x="1330" y="976" fill="#7fb0b0" font-size="11" text-anchor="middle">(east flank)</text>
+  </g>
+  <g>
+    <path d="M 700,710 C 760,780 640,850 710,930 C 780,1010 660,1090 730,1170 C 800,1250 690,1330 750,1410" fill="none" stroke="#213a3a" stroke-width="50" stroke-linecap="round"/>
+    <path d="M 700,710 C 760,780 640,850 710,930 C 780,1010 660,1090 730,1170 C 800,1250 690,1330 750,1410" fill="none" stroke="#0e1f1f" stroke-width="32" stroke-linecap="round"/>
+    <text x="870" y="1210" fill="#7fb0b0" font-size="11" text-anchor="middle">Original canal</text>
+  </g>
+  <g>
+    <path d="M 100,1170 Q 190,1120 270,1145 Q 350,1110 430,1150 Q 490,1180 480,1240 Q 500,1290 475,1340 Q 495,1390 445,1420 Q 380,1460 300,1430 Q 210,1460 140,1410 Q 85,1370 100,1310 Q 70,1250 100,1210 Z" fill="#5a5230" opacity="0.55"/>
+    <g stroke="#4a4526" stroke-width="2" opacity="0.5" fill="none">
+      <path d="M 100,1170 Q 190,1120 270,1145 Q 350,1110 430,1150 Q 490,1180 480,1240 Q 500,1290 475,1340 Q 495,1390 445,1420 Q 380,1460 300,1430 Q 210,1460 140,1410 Q 85,1370 100,1310 Q 70,1250 100,1210 Z"/>
+    </g>
+    <g stroke="#c9b968" stroke-width="2" opacity="0.8">
+      <line x1="140" y1="1420" x2="135" y2="1388"/><line x1="160" y1="1428" x2="156" y2="1394"/>
+      <line x1="185" y1="1432" x2="182" y2="1398"/><line x1="210" y1="1435" x2="208" y2="1400"/>
+      <line x1="235" y1="1430" x2="234" y2="1398"/><line x1="260" y1="1425" x2="259" y2="1392"/>
+      <line x1="285" y1="1430" x2="284" y2="1396"/><line x1="310" y1="1425" x2="309" y2="1392"/>
+      <line x1="340" y1="1420" x2="339" y2="1388"/><line x1="365" y1="1415" x2="365" y2="1382"/>
+      <line x1="395" y1="1408" x2="395" y2="1375"/><line x1="420" y1="1400" x2="420" y2="1368"/>
+      <line x1="120" y1="1350" x2="116" y2="1318"/><line x1="150" y1="1355" x2="147" y2="1322"/>
+      <line x1="180" y1="1358" x2="178" y2="1325"/><line x1="240" y1="1350" x2="239" y2="1317"/>
+      <line x1="270" y1="1348" x2="269" y2="1315"/>
+      <line x1="300" y1="1352" x2="300" y2="1319"/><line x1="330" y1="1355" x2="330" y2="1322"/>
+      <line x1="360" y1="1358" x2="360" y2="1325"/><line x1="390" y1="1352" x2="390" y2="1319"/>
+      <line x1="440" y1="1345" x2="440" y2="1312"/><line x1="460" y1="1300" x2="460" y2="1268"/>
+      <line x1="190" y1="1280" x2="188" y2="1248"/><line x1="220" y1="1276" x2="219" y2="1244"/>
+      <line x1="250" y1="1272" x2="249" y2="1240"/><line x1="280" y1="1270" x2="279" y2="1238"/>
+      <line x1="310" y1="1272" x2="309" y2="1240"/><line x1="340" y1="1276" x2="340" y2="1244"/>
+      <line x1="370" y1="1280" x2="370" y2="1248"/><line x1="400" y1="1276" x2="400" y2="1244"/>
+      <line x1="430" y1="1270" x2="430" y2="1238"/><line x1="450" y1="1240" x2="450" y2="1208"/>
+      <line x1="180" y1="1205" x2="179" y2="1175"/>
+      <line x1="215" y1="1200" x2="214" y2="1172"/><line x1="250" y1="1195" x2="249" y2="1168"/>
+      <line x1="285" y1="1192" x2="285" y2="1165"/><line x1="320" y1="1190" x2="320" y2="1162"/>
+      <line x1="355" y1="1188" x2="355" y2="1160"/><line x1="390" y1="1190" x2="390" y2="1162"/>
+      <line x1="420" y1="1195" x2="420" y2="1168"/>
+    </g>
+    <text x="290" y="1478" fill="#e0d090" font-size="12" font-weight="bold" text-anchor="middle">Wheat Field (overgrown)</text>
+    <text x="290" y="1492" fill="#c9c4b0" font-size="9" text-anchor="middle">concealment, not full cover — countered by AoE abilities</text>
+    <text x="290" y="1504" fill="#c9c4b0" font-size="9" text-anchor="middle">and elevated vantage (nearby hill/towers see over it)</text>
+    <g transform="translate(300,1290)">
+      <rect x="-22" y="-10" width="44" height="70" fill="#5a4530" stroke="#2a1f16" stroke-width="2"/>
+      <polygon points="-28,-10 0,-45 28,-10" fill="#4a3a28" stroke="#2a1f16" stroke-width="2"/>
+      <circle cx="0" cy="-40" r="7" fill="#3a3630" stroke="#8a7a55"/>
+      <line x1="0" y1="-40" x2="35" y2="-65" stroke="#6b5a3f" stroke-width="5"/>
+      <line x1="0" y1="-40" x2="-30" y2="-58" stroke="#6b5a3f" stroke-width="5"/>
+      <line x1="0" y1="-40" x2="12" y2="-8" stroke="#6b5a3f" stroke-width="5" opacity="0.6"/>
+      <line x1="0" y1="-40" x2="-8" y2="-25" stroke="#6b5a3f" stroke-width="5"/>
+      <text x="0" y="80" fill="#c9a97a" font-size="10" text-anchor="middle">Broken Windmill</text>
+    </g>
+    <g transform="translate(230,1245)">
+      <ellipse cx="0" cy="0" rx="20" ry="15" fill="#8a7040" stroke="#5a4a28" stroke-width="2"/>
+      <path d="M -18,-4 Q 0,4 18,-4" fill="none" stroke="#5a4a28" stroke-width="1.5"/>
+      <path d="M -18,6 Q 0,13 18,6" fill="none" stroke="#5a4a28" stroke-width="1.5"/>
+      <text x="0" y="30" fill="#c9a97a" font-size="9" text-anchor="middle">Hay bale</text>
+    </g>
+    <g transform="translate(410,1360)">
+      <ellipse cx="0" cy="0" rx="18" ry="13" fill="#8a7040" stroke="#5a4a28" stroke-width="2"/>
+      <path d="M -16,-3 Q 0,4 16,-3" fill="none" stroke="#5a4a28" stroke-width="1.5"/>
+      <path d="M -16,5 Q 0,11 16,5" fill="none" stroke="#5a4a28" stroke-width="1.5"/>
+    </g>
+  </g>
+  <g opacity="0.9">
+    <circle cx="300" cy="590" r="15" fill="#2e4834"/><circle cx="325" cy="605" r="18" fill="#33513c"/>
+    <circle cx="150" cy="650" r="14" fill="#2e4834"/><circle cx="1400" cy="500" r="15" fill="#33513c"/>
+    <circle cx="920" cy="600" r="13" fill="#33513c"/>
+    <circle cx="130" cy="900" r="14" fill="#2e4834"/><circle cx="1390" cy="800" r="15" fill="#33513c"/>
+    <circle cx="690" cy="750" r="15" fill="#33513c"/>
+    <circle cx="950" cy="600" r="14" fill="#2e4834"/><circle cx="1350" cy="600" r="13" fill="#33513c"/>
+    <circle cx="120" cy="1000" r="14" fill="#2e4834"/><circle cx="1400" cy="1050" r="15" fill="#33513c"/>
+    <circle cx="500" cy="920" r="16" fill="#2e4834"/><circle cx="880" cy="980" r="15" fill="#33513c"/>
+    <circle cx="1000" cy="1010" r="14" fill="#2e4834"/><circle cx="1180" cy="1050" r="16" fill="#33513c"/>
+    <circle cx="1130" cy="1200" r="13" fill="#33513c"/>
+    <circle cx="700" cy="1230" r="16" fill="#2e4834"/><circle cx="1000" cy="1150" r="15" fill="#33513c"/>
+    <circle cx="1200" cy="1300" r="14" fill="#2e4834"/>
+    <circle cx="900" cy="1330" r="15" fill="#2e4834"/><circle cx="1050" cy="1350" r="17" fill="#33513c"/>
+    <circle cx="900" cy="1420" r="14" fill="#2e4834"/><circle cx="1180" cy="1380" r="13" fill="#33513c"/>
+    <circle cx="380" cy="700" r="12" fill="#33513c"/><circle cx="800" cy="1090" r="14" fill="#33513c"/>
+  </g>
+  <g>
+    <rect x="640" y="1160" width="100" height="60" fill="#4a3a2a" stroke="#2a1f16" stroke-width="2"/>
+    <polyline points="640,1160 690,1125 740,1160" fill="none" stroke="#2a1f16" stroke-width="3"/>
+    <text x="690" y="1238" fill="#c9a97a" font-size="10" text-anchor="middle">Granary</text>
+  </g>
+  <g>
+    <rect x="755" y="1175" width="70" height="50" fill="#4a3a2a" stroke="#2a1f16" stroke-width="2"/>
+    <polyline points="755,1175 790,1153 825,1175" fill="none" stroke="#2a1f16" stroke-width="2.5"/>
+    <text x="790" y="1243" fill="#c9a97a" font-size="10" text-anchor="middle">Kennels</text>
+  </g>
+  <g>
+    <rect x="640" y="1250" width="90" height="65" fill="#55524a" stroke="#3a3630" stroke-width="2"/>
+    <rect x="705" y="1215" width="14" height="40" fill="#3a3630"/>
+    <text x="685" y="1332" fill="#c9c4b0" font-size="10" text-anchor="middle">Blacksmith / armory</text>
+  </g>
+  <g>
+    <rect x="900" y="1440" width="110" height="80" fill="none" stroke="#8a7355" stroke-width="3" stroke-dasharray="6,4"/>
+    <rect x="935" y="1465" width="8" height="30" fill="#c9a97a"/>
+    <rect x="960" y="1465" width="8" height="30" fill="#c9a97a"/>
+    <text x="955" y="1538" fill="#c9c4b0" font-size="10" text-anchor="middle">Training yard</text>
+  </g>
+  <rect x="1076" y="1444" width="26" height="180" fill="#0a0f0a" opacity="0.5" transform="rotate(-5 1089 1534)"/>
+  <rect x="1072" y="1440" width="26" height="180" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(-5 1085 1530)"/>
+  <text x="1130" y="1500" fill="#7fa0d0" font-size="9" text-anchor="middle">N–S lane</text>
+  <text x="1130" y="1512" fill="#7fa0d0" font-size="9" text-anchor="middle">(defender approach)</text>
+  <text x="750" y="1445" fill="#7d9c7f" font-size="11" text-anchor="middle">(wall-tag proportions — Console run-face vs PC wall-jump-pair — next annotation pass)</text>
+  <text x="750" y="1560" fill="#e8dcb8" font-size="14" font-weight="bold" text-anchor="middle">FORECOURT — no straight run to the Relic</text>
+  <rect x="480" y="1581" width="170" height="30" fill="#0a0f0a" opacity="0.5" transform="rotate(-10 565 1596)"/>
+  <rect x="475" y="1575" width="170" height="30" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(-10 560 1590)"/>
+  <rect x="850" y="1585" width="190" height="30" fill="#0a0f0a" opacity="0.5" transform="rotate(14 945 1600)"/>
+  <rect x="845" y="1579" width="190" height="30" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(14 940 1594)"/>
+  <g>
+    <rect x="660" y="1595" width="16" height="60" fill="#5a564c" stroke="#3a3630" transform="rotate(70 668 1625)"/>
+    <circle cx="720" cy="1625" r="14" fill="#5a564c" stroke="#3a3630"/>
+    <text x="700" y="1680" fill="#c9c4b0" font-size="10" text-anchor="middle">Toppled statue / fallen columns</text>
+  </g>
+  <g>
+    <polygon points="1000,1625 1030,1615 1050,1640 1015,1650" fill="#4a4640" stroke="#3a3630"/>
+    <polygon points="960,1645 985,1637 995,1660 965,1665" fill="#4a4640" stroke="#3a3630"/>
+    <text x="1000" y="1695" fill="#c9c4b0" font-size="10" text-anchor="middle">Rubble pile</text>
+  </g>
+  <rect x="300" y="1604" width="26" height="180" fill="#0a0f0a" opacity="0.5" transform="rotate(6 313 1694)"/>
+  <rect x="296" y="1600" width="26" height="180" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(6 309 1690)"/>
+  <text x="260" y="1660" fill="#7fa0d0" font-size="9" text-anchor="middle">N–S lane</text>
+  <text x="260" y="1672" fill="#7fa0d0" font-size="9" text-anchor="middle">(bottom-left corner)</text>
+  <rect x="1150" y="1604" width="26" height="180" fill="#0a0f0a" opacity="0.5" transform="rotate(-6 1163 1694)"/>
+  <rect x="1146" y="1600" width="26" height="180" fill="#6b6559" stroke="#3a3630" stroke-width="2.5" transform="rotate(-6 1159 1690)"/>
+  <text x="1220" y="1660" fill="#7fa0d0" font-size="9" text-anchor="middle">N–S lane</text>
+  <text x="1220" y="1672" fill="#7fa0d0" font-size="9" text-anchor="middle">(bottom-right corner)</text>
+  <g>
+    <path d="M 580,1720 L 920,1720 L 960,1770 L 900,1840 L 600,1840 L 540,1770 Z" fill="#33322e" stroke="#a89a70" stroke-width="2.5"/>
+    <text x="750" y="1712" fill="#e8dcb8" font-size="16" font-weight="bold" text-anchor="middle">DEFENDER STRONGHOLD — Castle Keep + Wizard Tower</text>
+    <rect x="720" y="1714" width="60" height="16" fill="#12160f"/>
+    <text x="750" y="1758" fill="#c9bd98" font-size="10" text-anchor="middle">GATE (breached)</text>
+    <rect x="640" y="1765" width="220" height="65" fill="#55524a" stroke="#8a7a55" stroke-width="2"/>
+    <rect x="710" y="1750" width="80" height="80" fill="#4a4640" stroke="#8a7a55" stroke-width="3"/>
+    <text x="750" y="1793" fill="#e8dcb8" font-size="10" text-anchor="middle">MAIN</text>
+    <text x="750" y="1805" fill="#e8dcb8" font-size="10" text-anchor="middle">TOWER</text>
+    <circle cx="650" cy="1770" r="20" fill="#4a4640" stroke="#8a7a55" stroke-width="2"/>
+    <circle cx="850" cy="1770" r="20" fill="#4a4640" stroke="#8a7a55" stroke-width="2"/>
+    <text x="750" y="1875" fill="#9aa88a" font-size="10" text-anchor="middle">Relic spawns in main tower base. Defenders roam anywhere except the attacker home area.</text>
+  </g>
+  <g font-size="11" fill="#cfcfc0">
+    <text x="70" y="1900">Legend:</text>
+    <circle cx="90" cy="1915" r="7" fill="#3a5a80"/><text x="105" y="1919">Spawn</text>
+    <circle cx="190" cy="1915" r="7" fill="#7a5a2a"/><text x="205" y="1919">Extraction</text>
+    <circle cx="320" cy="1915" r="7" fill="#4a4640" stroke="#8a7a55"/><text x="335" y="1919">Grapple/bastion tower</text>
+    <rect x="490" y="1908" width="16" height="16" fill="#6b6559"/><text x="512" y="1919">Ruin wall (10 are N–S run lanes)</text>
+    <rect x="800" y="1908" width="16" height="16" fill="#213a3a"/><text x="822" y="1919">Canal</text>
+    <circle cx="880" cy="1915" r="7" fill="#33513c"/><text x="895" y="1919">Foliage</text>
+    <rect x="970" y="1908" width="16" height="16" fill="#5a5230" opacity="0.7"/><text x="992" y="1919">Wheat (concealment)</text>
+  </g>
+</svg>
